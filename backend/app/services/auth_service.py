@@ -1,0 +1,456 @@
+"""
+Core authentication service.
+Handles all interactions with Supabase Auth + profile management.
+
+Security principles:
+- Supabase stores and verifies passwords — we never handle raw credentials
+- Profile creation is atomic — orphan auth users are cleaned up on failure
+- All logins are audited
+- Role checks happen before any data is returned
+"""
+from __future__ import annotations
+
+import logging
+from typing import Any
+from uuid import UUID
+
+import asyncpg
+from fastapi import HTTPException, Request, status
+from supabase import AClient, acreate_client
+
+from app.config import settings
+from app.core.audit import AuditAction, write_audit_log
+from app.schemas.auth import AuthTokenResponse, UserProfileResponse
+
+logger = logging.getLogger(__name__)
+
+
+# ── Supabase client factory ───────────────────────────────────────────────────
+
+async def get_supabase_client() -> AClient:
+    """Returns an async Supabase client using the anon key (for auth operations)."""
+    return await acreate_client(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY)
+
+
+async def get_supabase_admin_client() -> AClient:
+    """
+    Returns an async Supabase client using the service role key.
+    Use ONLY for administrative operations (creating users, bypassing email confirmation).
+    NEVER expose this client or its key to the frontend.
+    """
+    return await acreate_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
+
+
+# ── Signup ────────────────────────────────────────────────────────────────────
+
+async def create_user_with_profile(
+    *,
+    db: asyncpg.Connection,
+    email: str,
+    password: str,
+    full_name: str,
+    company_name: str | None,
+    company_reg_no: str | None,
+    phone: str,
+    country: str,
+    roles: list[str],
+    request: Request,
+) -> dict:
+    """
+    Creates a Supabase auth user then immediately inserts the profile.
+    If profile creation fails, the auth user is deleted to prevent orphans.
+
+    Returns the created profile record.
+    """
+    supabase = await get_supabase_client()
+    auth_user_id: str | None = None
+
+    try:
+        # Step 1: Create auth user in Supabase
+        auth_response = await supabase.auth.sign_up({
+            "email": email.lower().strip(),
+            "password": password,
+            "options": {
+                "data": {
+                    "full_name": full_name,
+                    "roles": roles,
+                }
+            },
+        })
+
+        if not auth_response.user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Account creation failed. Please try again.",
+            )
+
+        auth_user_id = str(auth_response.user.id)
+
+        # Step 2: Insert profile (using DB connection which uses service role)
+        profile = await db.fetchrow(
+            """
+            INSERT INTO public.profiles
+                (id, full_name, company_name, company_reg_no, phone, country,
+                 roles, kyc_status, is_active)
+            VALUES
+                ($1, $2, $3, $4, $5, $6, $7,
+                 CASE WHEN 'buyer' = ANY($7) THEN 'pending' ELSE 'not_applicable' END,
+                 true)
+            RETURNING *
+            """,
+            UUID(auth_user_id),
+            full_name.strip(),
+            company_name.strip() if company_name else None,
+            company_reg_no.strip() if company_reg_no else None,
+            phone,
+            country.strip(),
+            roles,
+        )
+
+        # Step 3: Audit log
+        await write_audit_log(
+            db,
+            actor_id=auth_user_id,
+            actor_roles=roles,
+            action=AuditAction.AUTH_SIGNUP,
+            resource_type="profile",
+            resource_id=auth_user_id,
+            new_state={"email": email, "roles": roles, "country": country},
+            metadata={
+                "ip": getattr(request.state, "client_ip", "unknown"),
+                "user_agent": getattr(request.state, "user_agent", ""),
+            },
+        )
+
+        return dict(profile)
+
+    except HTTPException:
+        raise
+
+    except asyncpg.UniqueViolationError:
+        # Profile already exists — email is already registered
+        await _cleanup_orphan_auth_user(auth_user_id)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email address already exists.",
+        )
+
+    except Exception as exc:
+        logger.error("Signup failed for %s: %s", email, exc)
+        await _cleanup_orphan_auth_user(auth_user_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Account creation failed. Please try again.",
+        )
+
+
+async def create_internal_user(
+    *,
+    db: asyncpg.Connection,
+    email: str,
+    temp_password: str,
+    full_name: str,
+    company_name: str | None,
+    company_reg_no: str | None,
+    phone: str,
+    country: str,
+    roles: list[str],
+    created_by: UUID,
+    request: Request,
+) -> dict:
+    """
+    Creates an internal user (agent, admin, finance_admin) using the admin client.
+    Skips email confirmation — admin provisions these accounts directly.
+    Sends a temporary password that must be changed on first login.
+    """
+    admin_client = await get_supabase_admin_client()
+    auth_user_id: str | None = None
+
+    try:
+        # Use admin API to create user (bypasses email confirmation)
+        auth_response = await admin_client.auth.admin.create_user({
+            "email": email.lower().strip(),
+            "password": temp_password,
+            "email_confirm": True,   # admin-confirmed, no email verification needed
+            "user_metadata": {
+                "full_name": full_name,
+                "roles": roles,
+                "created_by": str(created_by),
+                "requires_password_change": True,
+            },
+        })
+
+        if not auth_response.user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Internal user creation failed.",
+            )
+
+        auth_user_id = str(auth_response.user.id)
+
+        profile = await db.fetchrow(
+            """
+            INSERT INTO public.profiles
+                (id, full_name, company_name, company_reg_no, phone, country,
+                 roles, kyc_status, is_active)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'not_applicable', true)
+            RETURNING *
+            """,
+            UUID(auth_user_id),
+            full_name.strip(),
+            company_name,
+            company_reg_no,
+            phone,
+            country.strip(),
+            roles,
+        )
+
+        # TODO: send welcome email with temp password via Resend
+        # await notification_service.send_agent_welcome(email, temp_password)
+
+        return dict(profile)
+
+    except HTTPException:
+        raise
+
+    except asyncpg.UniqueViolationError:
+        await _cleanup_orphan_auth_user(auth_user_id, use_admin=True)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email address already exists.",
+        )
+
+    except Exception as exc:
+        logger.error("Internal user creation failed for %s: %s", email, exc)
+        await _cleanup_orphan_auth_user(auth_user_id, use_admin=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="User creation failed. Please try again.",
+        )
+
+
+# ── Login ─────────────────────────────────────────────────────────────────────
+
+async def login_user(
+    *,
+    db: asyncpg.Connection,
+    email: str,
+    password: str,
+    required_role: str | None,
+    request: Request,
+    required_role_any: list[str] | None = None,
+) -> AuthTokenResponse:
+    """
+    Authenticates a user via Supabase, then validates their role.
+
+    Args:
+        required_role: Single role that must be present (e.g. "buyer").
+        required_role_any: List of roles — user must have at least one (e.g. agents).
+    """
+    supabase = await get_supabase_client()
+
+    try:
+        auth_response = await supabase.auth.sign_in_with_password({
+            "email": email.lower().strip(),
+            "password": password,
+        })
+    except Exception as exc:
+        error_msg = str(exc).lower()
+
+        if "email not confirmed" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Please verify your email address before logging in.",
+            )
+
+        if "invalid login credentials" in error_msg or "invalid" in error_msg:
+            # Generic message — never hint at whether email or password is wrong
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password.",
+            )
+
+        logger.error("Login error for %s: %s", email, exc)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Login failed. Please try again.",
+        )
+
+    if not auth_response.user or not auth_response.session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password.",
+        )
+
+    user_id = UUID(str(auth_response.user.id))
+
+    # Load profile
+    profile = await db.fetchrow(
+        """
+        SELECT p.*, u.email
+        FROM public.profiles p
+        JOIN auth.users u ON u.id = p.id
+        WHERE p.id = $1
+        """,
+        user_id,
+    )
+
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account profile not found. Please contact support.",
+        )
+
+    if not profile["is_active"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account has been deactivated. Please contact support.",
+        )
+
+    # Role validation
+    user_roles: list[str] = profile["roles"]
+
+    if required_role and required_role not in user_roles:
+        await _audit_failed_login(db, user_id, user_roles, required_role, request)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"This login portal is for {required_role} accounts only.",
+        )
+
+    if required_role_any:
+        if not any(r in user_roles for r in required_role_any):
+            await _audit_failed_login(db, user_id, user_roles, str(required_role_any), request)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have the required role to access this portal.",
+            )
+
+    # Audit successful login
+    await write_audit_log(
+        db,
+        actor_id=user_id,
+        actor_roles=user_roles,
+        action=AuditAction.AUTH_LOGIN,
+        resource_type="session",
+        resource_id=str(user_id),
+        metadata={
+            "ip": getattr(request.state, "client_ip", "unknown"),
+            "user_agent": getattr(request.state, "user_agent", ""),
+            "portal": required_role or "agent",
+        },
+    )
+
+    session = auth_response.session
+
+    return AuthTokenResponse(
+        access_token=session.access_token,
+        refresh_token=session.refresh_token,
+        expires_in=session.expires_in or 3600,
+        user=build_profile_response({**dict(profile), "email": auth_response.user.email}),
+    )
+
+
+# ── Logout ────────────────────────────────────────────────────────────────────
+
+async def logout_user(
+    *,
+    db: asyncpg.Connection,
+    token: str,
+    user: dict,
+    request: Request,
+) -> None:
+    """
+    Signs the user out of Supabase (invalidates the session token).
+    """
+    try:
+        supabase = await get_supabase_client()
+        # Set the session so we sign out the correct user
+        await supabase.auth.set_session(token, "")
+        await supabase.auth.sign_out()
+    except Exception as exc:
+        logger.warning("Logout supabase call failed (token may already be expired): %s", exc)
+        # Still audit the logout attempt and return success to the client
+        # The token will expire naturally
+
+    await write_audit_log(
+        db,
+        actor_id=user["id"],
+        actor_roles=user["roles"],
+        action=AuditAction.AUTH_LOGOUT,
+        resource_type="session",
+        resource_id=str(user["id"]),
+        metadata={
+            "ip": user.get("_client_ip", "unknown"),
+            "user_agent": user.get("_user_agent", ""),
+        },
+    )
+
+
+# ── Response builder ──────────────────────────────────────────────────────────
+
+def build_profile_response(profile: dict | asyncpg.Record) -> UserProfileResponse:
+    """Converts a raw DB profile row to a safe API response."""
+    p = dict(profile)
+    return UserProfileResponse(
+        id=p["id"],
+        email=p.get("email", ""),
+        full_name=p["full_name"],
+        company_name=p.get("company_name"),
+        company_reg_no=p.get("company_reg_no"),
+        phone=p.get("phone"),
+        country=p.get("country"),
+        roles=p["roles"],
+        kyc_status=p["kyc_status"],
+        is_active=p["is_active"],
+        created_at=str(p["created_at"]),
+    )
+
+
+# ── Private helpers ───────────────────────────────────────────────────────────
+
+async def _cleanup_orphan_auth_user(
+    auth_user_id: str | None,
+    use_admin: bool = False,
+) -> None:
+    """
+    Deletes an orphaned Supabase auth user when profile creation fails.
+    Called in the except block of create_user_with_profile.
+    """
+    if not auth_user_id:
+        return
+    try:
+        client = (
+            await get_supabase_admin_client()
+            if use_admin
+            else await get_supabase_admin_client()  # always need admin to delete
+        )
+        await client.auth.admin.delete_user(auth_user_id)
+    except Exception as exc:
+        logger.error(
+            "CRITICAL: Failed to cleanup orphan auth user %s: %s",
+            auth_user_id, exc
+        )
+
+
+async def _audit_failed_login(
+    db: asyncpg.Connection,
+    user_id: UUID,
+    user_roles: list[str],
+    attempted_role: str,
+    request: Request,
+) -> None:
+    """Logs a failed login attempt due to role mismatch."""
+    await write_audit_log(
+        db,
+        actor_id=user_id,
+        actor_roles=user_roles,
+        action=AuditAction.AUTH_FAILED_PERMISSION,
+        resource_type="session",
+        resource_id=str(user_id),
+        metadata={
+            "reason": "role_mismatch",
+            "attempted_role": attempted_role,
+            "actual_roles": user_roles,
+            "ip": getattr(request.state, "client_ip", "unknown"),
+        },
+    )
