@@ -24,7 +24,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
 from app.config import settings
-from app.db.client import close_pool, create_pool
+from app.db.client import check_db_connection, close_pool, create_pool
 from app.middleware.request_context import RequestContextMiddleware
 from app.routers import auth_router
 
@@ -47,9 +47,22 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting MarineXchange Africa API (env=%s)", settings.ENVIRONMENT)
-    await create_pool()
-    logger.info("Database connection pool established.")
+
+    if settings.is_production:
+        # Production: fail fast — do not start if DB is unreachable.
+        await create_pool()
+        logger.info("Database connection pool established.")
+    else:
+        # Development: pool is lazily created on first request.
+        # App starts successfully even if DATABASE_URL is not yet configured.
+        logger.info(
+            "Development mode: database pool will be created on first request. "
+            "Set DATABASE_URL in .env — get it from Supabase Dashboard → "
+            "Project Settings → Database → Connection string (URI)."
+        )
+
     yield
+
     logger.info("Shutting down — closing database pool.")
     await close_pool()
 
@@ -126,11 +139,17 @@ app.include_router(auth_router, prefix="/api/v1")
 
 @app.get("/health", tags=["Health"], include_in_schema=False)
 async def health_check():
-    """Used by Render health checks and Cloudflare monitoring."""
+    """
+    Used by Render health checks and Cloudflare monitoring.
+    Returns DB connectivity status so you can catch DATABASE_URL
+    misconfigurations without reading server logs.
+    """
+    db_ok = await check_db_connection()
     return {
-        "status": "healthy",
+        "status": "healthy" if db_ok else "degraded",
         "version": settings.APP_VERSION,
         "environment": settings.ENVIRONMENT,
+        "database": "connected" if db_ok else "unreachable — check DATABASE_URL in .env",
     }
 
 
