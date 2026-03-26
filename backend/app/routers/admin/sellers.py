@@ -90,7 +90,7 @@ async def get_seller(seller_id: UUID, db: DbConn, current_user: AdminUser) -> di
     kyc_rows = await db.fetch(
         """
         SELECT s.id, s.status, s.cycle_number, s.created_at, s.rejection_reason,
-               a.status AS assignment_status, a.reviewed_at,
+               a.status AS assignment_status, a.updated_at AS reviewed_at,
                COALESCE(ag.full_name, ag_u.email) AS agent_name
         FROM kyc.submissions s
         LEFT JOIN kyc.assignments a ON a.submission_id = s.id

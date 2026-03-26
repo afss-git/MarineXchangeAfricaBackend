@@ -94,9 +94,9 @@ async def get_buyer(buyer_id: UUID, db: DbConn, current_user: AdminUser) -> dict
             s.rejection_reason,
             -- Latest assignment for this submission
             a.id AS assignment_id, a.status AS assignment_status,
-            a.reviewed_at,
+            a.updated_at AS reviewed_at,
             COALESCE(ag.full_name, ag_u.email) AS agent_name,
-            ag.email AS agent_email,
+            ag_u.email AS agent_email,
             -- Document count
             (SELECT COUNT(*) FROM kyc.documents d WHERE d.submission_id = s.id) AS doc_count
         FROM kyc.submissions s
@@ -132,15 +132,18 @@ async def get_buyer(buyer_id: UUID, db: DbConn, current_user: AdminUser) -> dict
     pr_rows = await db.fetch(
         """
         SELECT
-            r.id, r.status, r.request_type, r.budget_min, r.budget_max,
-            r.currency, r.description, r.created_at, r.updated_at,
+            r.id, r.status, r.purchase_type AS request_type,
+            r.offered_price AS budget_min, NULL::NUMERIC AS budget_max,
+            r.offered_currency AS currency, r.message AS description,
+            r.created_at, r.updated_at,
             p.title AS product_title,
             COALESCE(ag.full_name, ag.company_name) AS agent_name,
             agu.email AS agent_email
         FROM marketplace.purchase_requests r
         LEFT JOIN marketplace.products p ON p.id = r.product_id
-        LEFT JOIN public.profiles ag ON ag.id = r.assigned_agent_id
-        LEFT JOIN auth.users agu ON agu.id = r.assigned_agent_id
+        LEFT JOIN marketplace.buyer_agent_assignments baa ON baa.request_id = r.id
+        LEFT JOIN public.profiles ag ON ag.id = baa.agent_id
+        LEFT JOIN auth.users agu ON agu.id = baa.agent_id
         WHERE r.buyer_id = $1
         ORDER BY r.created_at DESC
         """,
