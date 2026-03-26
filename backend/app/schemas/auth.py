@@ -198,6 +198,42 @@ class CreateAdminRequest(BaseModel):
         return normalize_phone(v)
 
 
+# ── Bootstrap Schema ──────────────────────────────────────────────────────────
+
+class BootstrapAdminRequest(BaseModel):
+    """
+    One-time payload for POST /auth/internal/bootstrap.
+    Creates the very first admin account when no admin exists in the system.
+    The caller must also supply the X-Bootstrap-Secret header.
+    """
+    model_config = {"extra": "forbid"}
+
+    email:      EmailStr
+    password:   PasswordField           # Operator chooses their own strong password
+    full_name:  NameField
+    phone:      PhoneField
+    country:    str = Field(min_length=2, max_length=100)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        try:
+            validate_password_strength(v)
+        except PasswordValidationError as e:
+            raise ValueError(str(e))
+        return v
+
+    @field_validator("phone")
+    @classmethod
+    def normalize_phone_number(cls, v: str) -> str:
+        return normalize_phone(v)
+
+    @field_validator("full_name", "country")
+    @classmethod
+    def strip_whitespace(cls, v: str) -> str:
+        return v.strip()
+
+
 # ── Response Schemas ──────────────────────────────────────────────────────────
 
 class UserProfileResponse(BaseModel):
@@ -209,10 +245,51 @@ class UserProfileResponse(BaseModel):
     company_reg_no: str | None
     phone: str | None
     country: str | None
+    avatar_url: str | None = None
     roles: list[str]
     kyc_status: str
     is_active: bool
     created_at: str
+
+
+class UpdateProfileBody(BaseModel):
+    """Fields a user can update on their own profile."""
+    model_config = {"extra": "forbid"}
+
+    full_name: str | None = Field(default=None, min_length=2, max_length=100)
+    phone: str | None = Field(default=None, min_length=7, max_length=20)
+    country: str | None = Field(default=None, min_length=2, max_length=100)
+    company_name: str | None = Field(default=None, min_length=2, max_length=200)
+    company_reg_no: str | None = Field(default=None, min_length=2, max_length=100)
+
+    @field_validator("phone")
+    @classmethod
+    def normalize_phone_number(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        return normalize_phone(v)
+
+    @field_validator("full_name", "country", "company_name", "company_reg_no")
+    @classmethod
+    def strip_whitespace(cls, v: str | None) -> str | None:
+        return v.strip() if v else v
+
+
+class ChangePasswordBody(BaseModel):
+    """Change own password — requires current password for verification."""
+    model_config = {"extra": "forbid"}
+
+    current_password: str = Field(min_length=1, max_length=72)
+    new_password: str = Field(min_length=12, max_length=72)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, v: str) -> str:
+        try:
+            validate_password_strength(v)
+        except PasswordValidationError as e:
+            raise ValueError(str(e))
+        return v
 
 
 class AuthTokenResponse(BaseModel):

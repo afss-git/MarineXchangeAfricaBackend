@@ -2,11 +2,11 @@
 Internal / staff authentication endpoints.
 These are NOT publicly advertised — accessed only by internal teams.
 
-POST /auth/admin/login          — admin login
-POST /auth/admin/logout         — admin logout
-POST /auth/finance-admin/login  — finance admin login
-POST /auth/finance-admin/logout — finance admin logout
-
+POST /auth/internal/bootstrap           — one-time first-admin bootstrap (secret-gated)
+POST /auth/admin/login                  — admin login
+POST /auth/admin/logout                 — admin logout
+POST /auth/finance-admin/login          — finance admin login
+POST /auth/finance-admin/logout         — finance admin logout
 POST /auth/internal/create-agent        — admin creates agent accounts
 POST /auth/internal/create-admin        — admin creates admin/finance-admin accounts
 """
@@ -14,15 +14,18 @@ from __future__ import annotations
 
 import secrets
 import string
+from typing import Annotated
 from uuid import UUID
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 
+from app.config import settings
 from app.core.audit import AuditAction, write_audit_log
 from app.deps import AdminUser, CurrentUser, DbConn, get_db, require_roles
 from app.schemas.auth import (
     AuthTokenResponse,
+    BootstrapAdminRequest,
     CreateAdminRequest,
     CreateAgentRequest,
     LoginRequest,
@@ -31,12 +34,87 @@ from app.schemas.auth import (
 )
 from app.services.auth_service import (
     build_profile_response,
+    create_first_admin,
     create_internal_user,
     login_user,
     logout_user,
 )
 
 router = APIRouter(tags=["Auth — Internal"])
+
+
+# ── Bootstrap (one-time, secret-gated) ───────────────────────────────────────
+
+@router.post(
+    "/internal/bootstrap",
+    response_model=UserProfileResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Bootstrap first admin account [One-time use]",
+    description=(
+        "Creates the very first admin account when no admin exists in the system.\n\n"
+        "**Security gates (all three must pass):**\n"
+        "1. `ADMIN_BOOTSTRAP_SECRET` must be set in server `.env`\n"
+        "2. `X-Bootstrap-Secret` header must match that secret (constant-time compare)\n"
+        "3. Zero admin profiles must exist in the database\n\n"
+        "**Procedure:**\n"
+        "1. Generate a long random secret: `openssl rand -hex 32`\n"
+        "2. Add `ADMIN_BOOTSTRAP_SECRET=<secret>` to `.env` and restart the server\n"
+        "3. Call this endpoint once with the secret in the header\n"
+        "4. Remove `ADMIN_BOOTSTRAP_SECRET` from `.env` and restart — endpoint is now permanently locked\n\n"
+        "The endpoint is disabled (returns 404) when `ADMIN_BOOTSTRAP_SECRET` is empty."
+    ),
+)
+async def bootstrap_first_admin(
+    payload: BootstrapAdminRequest,
+    request: Request,
+    db: DbConn,
+    x_bootstrap_secret: Annotated[str | None, Header()] = None,
+):
+    # Gate 1: secret must be configured on the server — if not set, behave as 404
+    # (don't reveal whether the endpoint exists but is locked)
+    if not settings.ADMIN_BOOTSTRAP_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not found.",
+        )
+
+    # Gate 2: constant-time comparison — prevents timing-based secret enumeration
+    provided = x_bootstrap_secret or ""
+    if not secrets.compare_digest(provided, settings.ADMIN_BOOTSTRAP_SECRET):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid bootstrap secret.",
+        )
+
+    # Gate 3: permanently self-lock once any admin exists
+    existing_admin_count = await db.fetchval(
+        "SELECT COUNT(*) FROM public.profiles WHERE 'admin' = ANY(roles)"
+    )
+    if existing_admin_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Bootstrap is disabled. An admin account already exists. "
+                "Use POST /auth/internal/create-admin to add more admins."
+            ),
+        )
+
+    profile = await create_first_admin(
+        db=db,
+        email=payload.email,
+        password=payload.password,
+        full_name=payload.full_name,
+        phone=payload.phone,
+        country=payload.country,
+        request=request,
+    )
+
+    # We don't have the email field on the profile row — fetch it
+    email_row = await db.fetchval(
+        "SELECT email FROM auth.users WHERE id = $1", profile["id"]
+    )
+
+    return build_profile_response({**profile, "email": email_row or payload.email})
 
 
 # ── Admin Login / Logout ──────────────────────────────────────────────────────

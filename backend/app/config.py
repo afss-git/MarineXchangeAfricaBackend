@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     INSTALLMENT_GRACE_PERIOD_DAYS: int = 5
 
     # ── Storage ───────────────────────────────────────────────────────────────
+    SUPABASE_STORAGE_BUCKET: str = "product-images"
     MAX_PRODUCT_IMAGES: int = 20
     MIN_PRODUCT_IMAGES: int = 10
     MAX_IMAGE_SIZE_MB: int = 2
@@ -60,6 +61,26 @@ class Settings(BaseSettings):
 
     # ── Security ──────────────────────────────────────────────────────────────
     CLOUDFLARE_TUNNEL_SECRET: str = ""
+
+    # ── SMS (Twilio) ──────────────────────────────────────────────────────────
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_FROM_NUMBER: str = ""    # E.164 format: +12345678901
+
+    # ── Deals ─────────────────────────────────────────────────────────────────
+    DEAL_PORTAL_TOKEN_EXPIRY_HOURS: int = 48
+    DEAL_OTP_EXPIRY_MINUTES: int = 10
+    DEAL_MAX_ACTIVE_PER_BUYER: int = 3
+    DEAL_HIGH_VALUE_THRESHOLD_USD: float = 100_000.0
+
+    # ── Admin ─────────────────────────────────────────────────────────────────
+    ADMIN_EMAIL: str = ""       # Notification recipient for admin alerts (purchase requests, etc.)
+
+    # ── Bootstrap ─────────────────────────────────────────────────────────────
+    # One-time secret for POST /api/v1/auth/internal/bootstrap.
+    # Set a long random value in .env, call the endpoint once, then DELETE it.
+    # The endpoint permanently self-locks once any admin profile exists in the DB.
+    ADMIN_BOOTSTRAP_SECRET: str = ""
 
     @property
     def is_production(self) -> bool:

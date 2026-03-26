@@ -42,6 +42,9 @@ async def get_current_user(
             p.country,
             p.roles,
             p.kyc_status,
+            p.kyc_expires_at,
+            p.kyc_attempt_count,
+            p.current_kyc_submission_id,
             p.is_active,
             p.created_at,
             u.email
@@ -114,12 +117,22 @@ def require_roles(*roles: str):
 
 def require_kyc():
     """
-    Dependency that ensures the user is a KYC-verified buyer.
+    Dependency that ensures the user is a buyer with an active (approved, non-expired) KYC.
     Use on purchase, bid, and finance endpoints.
+
+    Checks:
+      1. User has 'buyer' role (403 if not)
+      2. kyc_status == 'approved'
+      3. kyc_expires_at is NULL (never expires until set) OR > NOW()
     """
-    async def _check(current_user: dict = Depends(get_current_user)) -> dict:
+    from datetime import datetime, timezone
+
+    async def _check(current_user: dict = Depends(require_roles("buyer"))) -> dict:
         if "buyer" in current_user.get("roles", []):
-            if current_user.get("kyc_status") != "verified":
+            kyc_status = current_user.get("kyc_status")
+            kyc_expires_at = current_user.get("kyc_expires_at")
+
+            if kyc_status != "approved":
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=(
@@ -127,6 +140,18 @@ def require_kyc():
                         "Please complete your identity verification before proceeding."
                     ),
                 )
+
+            if kyc_expires_at is not None:
+                now = datetime.now(timezone.utc)
+                if isinstance(kyc_expires_at, datetime) and kyc_expires_at < now:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            "Your KYC approval has expired. "
+                            "Please submit updated documents for re-verification."
+                        ),
+                    )
+
         return current_user
 
     return _check
@@ -135,11 +160,15 @@ def require_kyc():
 # ── Typed aliases for common dependencies ─────────────────────────────────────
 # These make route signatures cleaner and self-documenting.
 
-CurrentUser = Annotated[dict, Depends(get_current_user)]
-AdminUser   = Annotated[dict, Depends(require_roles("admin"))]
-FinanceUser = Annotated[dict, Depends(require_roles("finance_admin"))]
-AnyAdmin    = Annotated[dict, Depends(require_roles("admin", "finance_admin"))]
-VerAgent    = Annotated[dict, Depends(require_roles("verification_agent"))]
-BuyerAgent  = Annotated[dict, Depends(require_roles("buyer_agent"))]
-KycBuyer    = Annotated[dict, Depends(require_kyc())]
-DbConn      = Annotated[asyncpg.Connection, Depends(get_db)]
+CurrentUser      = Annotated[dict, Depends(get_current_user)]
+AdminUser        = Annotated[dict, Depends(require_roles("admin"))]
+FinanceUser      = Annotated[dict, Depends(require_roles("finance_admin"))]
+AnyAdmin         = Annotated[dict, Depends(require_roles("admin", "finance_admin"))]
+VerAgent         = Annotated[dict, Depends(require_roles("verification_agent"))]
+BuyerAgent       = Annotated[dict, Depends(require_roles("buyer_agent"))]
+SellerUser       = Annotated[dict, Depends(require_roles("seller"))]
+BuyerUser        = Annotated[dict, Depends(require_roles("buyer"))]              # buyer, no KYC gate
+KycAgentOrAdmin  = Annotated[dict, Depends(require_roles("buyer_agent", "admin"))]
+VerAgentOrAdmin  = Annotated[dict, Depends(require_roles("verification_agent", "admin"))]
+KycBuyer         = Annotated[dict, Depends(require_kyc())]                       # buyer with approved KYC
+DbConn           = Annotated[asyncpg.Connection, Depends(get_db)]

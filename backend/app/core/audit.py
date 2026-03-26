@@ -21,6 +21,7 @@ class AuditAction(StrEnum):
     AUTH_ROLE_ADDED         = "auth.role_added"
     AUTH_ROLE_CHANGED       = "auth.role_changed"
     AUTH_ACCOUNT_DEACTIVATED= "auth.account_deactivated"
+    AUTH_USER_REACTIVATED   = "auth.user_reactivated"
     AUTH_FAILED_PERMISSION  = "auth.failed_permission_check"
     AUTH_UNAUTHORIZED_ACCESS= "auth.unauthorized_access"
     AUTH_PASSWORD_CHANGE    = "auth.password_change"
@@ -42,11 +43,21 @@ class AuditAction(StrEnum):
     VERIFICATION_EVIDENCE_UPLOADED = "verification.evidence_uploaded"
 
     # ── KYC ───────────────────────────────────────────────────────────────────
-    KYC_DOCUMENTS_SUBMITTED = "kyc.documents_submitted"
-    KYC_AGENT_ASSIGNED      = "kyc.agent_assigned"
-    KYC_REPORT_SUBMITTED    = "kyc.report_submitted"
-    KYC_VERIFIED            = "kyc.verified"
-    KYC_REJECTED            = "kyc.rejected"
+    KYC_SUBMISSION_STARTED      = "kyc.submission_started"
+    KYC_DOCUMENT_UPLOADED       = "kyc.document_uploaded"
+    KYC_DOCUMENT_DELETED        = "kyc.document_deleted"
+    KYC_SUBMITTED               = "kyc.submitted"
+    KYC_AGENT_ASSIGNED          = "kyc.agent_assigned"
+    KYC_ASSIGNMENT_UPDATED      = "kyc.assignment_updated"
+    KYC_AGENT_REVIEW_SUBMITTED  = "kyc.agent_review_submitted"
+    KYC_APPROVED                = "kyc.approved"
+    KYC_REJECTED                = "kyc.rejected"
+    KYC_RESUBMISSION_REQUESTED  = "kyc.resubmission_requested"
+    KYC_RESUBMISSION_STARTED    = "kyc.resubmission_started"
+    KYC_EXPIRED                 = "kyc.expired"
+    KYC_ADMIN_OVERRIDE          = "kyc.admin_override"
+    KYC_DOCUMENT_TYPE_CREATED   = "kyc.document_type_created"
+    KYC_DOCUMENT_TYPE_UPDATED   = "kyc.document_type_updated"
 
     # ── Purchase ──────────────────────────────────────────────────────────────
     PURCHASE_REQUEST_CREATED  = "purchase.request_created"
@@ -55,12 +66,18 @@ class AuditAction(StrEnum):
     PURCHASE_CANCELLED        = "purchase.cancelled"
 
     # ── Auctions ──────────────────────────────────────────────────────────────
-    AUCTION_CREATED         = "auction.created"
-    AUCTION_BID_PLACED      = "auction.bid_placed"
-    AUCTION_WINNER_DECLARED = "auction.winner_declared"
-    AUCTION_CANCELLED       = "auction.cancelled"
-    AUCTION_FAILED_NO_BIDS  = "auction.failed_no_bids"
-    AUCTION_FAILED_RESERVE  = "auction.failed_reserve_not_met"
+    AUCTION_CREATED              = "auction.created"
+    AUCTION_SCHEDULED            = "auction.scheduled"
+    AUCTION_BID_PLACED           = "auction.bid_placed"
+    AUCTION_EXTENDED             = "auction.auto_extended"
+    AUCTION_CLOSED               = "auction.closed"
+    AUCTION_WINNER_DECLARED      = "auction.winner_declared"
+    AUCTION_WINNER_APPROVED      = "auction.winner_approved"
+    AUCTION_WINNER_REJECTED      = "auction.winner_rejected"
+    AUCTION_CONVERTED            = "auction.converted_to_deal"
+    AUCTION_CANCELLED            = "auction.cancelled"
+    AUCTION_FAILED_NO_BIDS       = "auction.failed_no_bids"
+    AUCTION_FAILED_RESERVE       = "auction.failed_reserve_not_met"
 
     # ── Finance ───────────────────────────────────────────────────────────────
     FINANCE_REQUEST_CREATED       = "finance.request_created"
@@ -92,6 +109,26 @@ class AuditAction(StrEnum):
 
     # ── KYC Document Retention ────────────────────────────────────────────────
     KYC_DOCUMENTS_DELETED   = "kyc.documents_deleted_retention_expired"
+
+    # ── Documents (Phase 10) ──────────────────────────────────────────────────
+    DOCUMENT_UPLOADED           = "document.uploaded"
+    DOCUMENT_UPDATED            = "document.updated"
+    DOCUMENT_DELETED            = "document.deleted"
+    DOCUMENT_DOWNLOADED         = "document.downloaded"
+    DOCUMENT_ACKNOWLEDGED       = "document.acknowledged"
+    INVOICE_GENERATED           = "invoice.generated"
+    INVOICE_ISSUED              = "invoice.issued"
+    INVOICE_VOIDED              = "invoice.voided"
+    INVOICE_DOWNLOADED          = "invoice.downloaded"
+
+    # ── Payment Lifecycle (Phase 9) ───────────────────────────────────────────
+    PAYMENT_SCHEDULE_CREATED    = "payment.schedule_created"
+    PAYMENT_SCHEDULE_DELETED    = "payment.schedule_deleted"
+    PAYMENT_EVIDENCE_SUBMITTED  = "payment.evidence_submitted"
+    PAYMENT_RECORD_VERIFIED     = "payment.record_verified"
+    PAYMENT_RECORD_REJECTED     = "payment.record_rejected"
+    PAYMENT_ITEM_WAIVED         = "payment.item_waived"
+    PAYMENT_DEAL_COMPLETED      = "payment.deal_auto_completed"
 
 
 async def write_audit_log(

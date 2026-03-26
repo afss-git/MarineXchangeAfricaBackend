@@ -1,16 +1,24 @@
 """
 Authenticated user profile endpoints.
 
-GET  /auth/me          — get current user profile
-GET  /auth/me/roles    — get current user's roles
+GET    /auth/me              — get current user profile
+GET    /auth/me/roles        — get current user's roles
+PATCH  /auth/me/profile      — update name, phone, company, country
+PATCH  /auth/me/password     — change password (requires current password)
+POST   /auth/me/avatar       — upload profile photo
 """
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, File, UploadFile
 
-from app.deps import CurrentUser
-from app.schemas.auth import UserProfileResponse
+from app.deps import CurrentUser, DbConn
+from app.schemas.auth import (
+    ChangePasswordBody,
+    UpdateProfileBody,
+    UserProfileResponse,
+)
 from app.services.auth_service import build_profile_response
+from app.services import profile_service
 
 router = APIRouter(tags=["Auth — Profile"])
 
@@ -19,10 +27,6 @@ router = APIRouter(tags=["Auth — Profile"])
     "/me",
     response_model=UserProfileResponse,
     summary="Get current user profile",
-    description=(
-        "Returns the authenticated user's profile including roles, KYC status, "
-        "and account details. Works for all role types."
-    ),
 )
 async def get_me(current_user: CurrentUser):
     return build_profile_response(current_user)
@@ -31,7 +35,6 @@ async def get_me(current_user: CurrentUser):
 @router.get(
     "/me/roles",
     summary="Get current user's roles",
-    description="Returns a list of roles assigned to the current user.",
 )
 async def get_my_roles(current_user: CurrentUser) -> dict:
     return {
@@ -47,3 +50,41 @@ async def get_my_roles(current_user: CurrentUser) -> dict:
         "is_finance_admin": "finance_admin" in current_user["roles"],
         "kyc_status": current_user.get("kyc_status"),
     }
+
+
+@router.patch(
+    "/me/profile",
+    response_model=UserProfileResponse,
+    summary="Update your profile (name, phone, company, country)",
+)
+async def update_profile(
+    body: UpdateProfileBody,
+    db: DbConn,
+    current_user: CurrentUser,
+):
+    return await profile_service.update_profile(db, current_user, body)
+
+
+@router.patch(
+    "/me/password",
+    summary="Change your password",
+)
+async def change_password(
+    body: ChangePasswordBody,
+    db: DbConn,
+    current_user: CurrentUser,
+) -> dict:
+    return await profile_service.change_password(db, current_user, body)
+
+
+@router.post(
+    "/me/avatar",
+    response_model=UserProfileResponse,
+    summary="Upload a profile avatar (JPEG, PNG, or WebP — max 5 MB)",
+)
+async def upload_avatar(
+    db: DbConn,
+    current_user: CurrentUser,
+    file: UploadFile = File(...),
+):
+    return await profile_service.upload_avatar(db, current_user, file)

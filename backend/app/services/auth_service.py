@@ -137,6 +137,13 @@ async def create_user_with_profile(
 
     except Exception as exc:
         logger.error("Signup failed for %s: %s", email, exc)
+        error_msg = str(exc).lower()
+        if "rate limit" in error_msg or "over_email_send_rate_limit" in error_msg:
+            await _cleanup_orphan_auth_user(auth_user_id)
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many signup attempts. Please wait a few minutes and try again.",
+            )
         await _cleanup_orphan_auth_user(auth_user_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -226,6 +233,97 @@ async def create_internal_user(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="User creation failed. Please try again.",
+        )
+
+
+# ── Bootstrap First Admin ─────────────────────────────────────────────────────
+
+async def create_first_admin(
+    *,
+    db: asyncpg.Connection,
+    email: str,
+    password: str,
+    full_name: str,
+    phone: str,
+    country: str,
+    request: Request,
+) -> dict:
+    """
+    Creates the very first admin account.
+
+    Key differences from create_internal_user:
+    - Operator supplies their own chosen password (not a temp one).
+    - Does NOT set requires_password_change metadata.
+    - Guarded at the endpoint layer: only callable when zero admin profiles exist.
+    """
+    admin_client = await get_supabase_admin_client()
+    auth_user_id: str | None = None
+
+    try:
+        auth_response = await admin_client.auth.admin.create_user({
+            "email": email.lower().strip(),
+            "password": password,
+            "email_confirm": True,
+            "user_metadata": {
+                "full_name": full_name,
+                "roles": ["admin"],
+            },
+        })
+
+        if not auth_response.user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Admin account creation failed. Please try again.",
+            )
+
+        auth_user_id = str(auth_response.user.id)
+
+        profile = await db.fetchrow(
+            """
+            INSERT INTO public.profiles
+                (id, full_name, phone, country, roles, kyc_status, is_active)
+            VALUES ($1, $2, $3, $4, '{admin}', 'not_applicable', true)
+            RETURNING *
+            """,
+            UUID(auth_user_id),
+            full_name.strip(),
+            phone,
+            country.strip(),
+        )
+
+        await write_audit_log(
+            db,
+            actor_id=auth_user_id,
+            actor_roles=["admin"],
+            action=AuditAction.AUTH_SIGNUP,
+            resource_type="profile",
+            resource_id=auth_user_id,
+            new_state={"email": email, "roles": ["admin"], "bootstrap": True},
+            metadata={
+                "ip": getattr(request.state, "client_ip", "unknown"),
+                "user_agent": getattr(request.state, "user_agent", ""),
+                "note": "First admin bootstrapped via /auth/internal/bootstrap",
+            },
+        )
+
+        return dict(profile)
+
+    except HTTPException:
+        raise
+
+    except asyncpg.UniqueViolationError:
+        await _cleanup_orphan_auth_user(auth_user_id, use_admin=True)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email address already exists.",
+        )
+
+    except Exception as exc:
+        logger.error("Bootstrap admin creation failed for %s: %s", email, exc)
+        await _cleanup_orphan_auth_user(auth_user_id, use_admin=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Admin account creation failed. Please try again.",
         )
 
 
