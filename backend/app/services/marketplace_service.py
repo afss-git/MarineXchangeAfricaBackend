@@ -657,7 +657,7 @@ async def get_product_detail(
         LEFT JOIN marketplace.categories c ON c.id = p.category_id
         LEFT JOIN public.profiles pr ON pr.id = p.seller_id
         LEFT JOIN marketplace.verification_assignments va
-               ON va.product_id = p.id AND va.cycle_number = p.verification_cycle
+               ON va.product_id = p.id AND va.cycle_number = p.verification_cycle + 1
         LEFT JOIN public.profiles ap ON ap.id = va.agent_id
         WHERE p.id = $1 AND p.deleted_at IS NULL
         """,
@@ -862,7 +862,7 @@ async def list_admin_products(
         LEFT JOIN marketplace.categories c ON c.id = p.category_id
         LEFT JOIN public.profiles pr ON pr.id = p.seller_id
         LEFT JOIN marketplace.verification_assignments va
-               ON va.product_id = p.id AND va.cycle_number = p.verification_cycle
+               ON va.product_id = p.id AND va.cycle_number = p.verification_cycle + 1
         LEFT JOIN public.profiles ap ON ap.id = va.agent_id
         WHERE {where_clause}
         ORDER BY p.created_at DESC
