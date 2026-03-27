@@ -86,21 +86,9 @@ async def get_seller(seller_id: UUID, db: DbConn, current_user: AdminUser) -> di
     if not profile:
         raise HTTPException(status_code=404, detail="Seller not found.")
 
-    # ── KYC ──────────────────────────────────────────────────────────────────
-    kyc_rows = await db.fetch(
-        """
-        SELECT s.id, s.status, s.cycle_number, s.created_at, s.rejection_reason,
-               a.status AS assignment_status, a.updated_at AS reviewed_at,
-               COALESCE(ag.full_name, ag_u.email) AS agent_name
-        FROM kyc.submissions s
-        LEFT JOIN kyc.assignments a ON a.submission_id = s.id
-        LEFT JOIN public.profiles ag ON ag.id = a.agent_id
-        LEFT JOIN auth.users ag_u ON ag_u.id = a.agent_id
-        WHERE s.buyer_id = $1
-        ORDER BY s.created_at DESC
-        """,
-        seller_id,
-    )
+    # Sellers are verified via product verification, not KYC submissions.
+    # Their kyc_status lives directly on their profile row.
+    kyc_rows: list = []
 
     # ── Listings ─────────────────────────────────────────────────────────────
     listing_rows = await db.fetch(
@@ -113,7 +101,7 @@ async def get_seller(seller_id: UUID, db: DbConn, current_user: AdminUser) -> di
             c.name AS category_name,
             -- current assigned agent
             COALESCE(ap.full_name, agu.email) AS verification_agent,
-            ap.email AS agent_email,
+            agu.email AS agent_email,
             -- image count
             (SELECT COUNT(*) FROM marketplace.product_images pi WHERE pi.product_id = p.id) AS image_count,
             -- deal linked to this product
