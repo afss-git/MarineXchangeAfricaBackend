@@ -649,16 +649,18 @@ async def get_product_detail(
         SELECT p.*,
                c.name   AS category_name,
                pr.company_name AS seller_company,
-               pr.email        AS seller_email,
+               su.email        AS seller_email,
                pr.phone        AS seller_phone,
-               COALESCE(ap.full_name, ap.email) AS verification_agent,
+               COALESCE(ap.full_name, agu.email) AS verification_agent,
                va.id AS verification_assignment_id
         FROM marketplace.products p
         LEFT JOIN marketplace.categories c ON c.id = p.category_id
         LEFT JOIN public.profiles pr ON pr.id = p.seller_id
+        LEFT JOIN auth.users su ON su.id = p.seller_id
         LEFT JOIN marketplace.verification_assignments va
                ON va.product_id = p.id AND va.cycle_number = p.verification_cycle + 1
         LEFT JOIN public.profiles ap ON ap.id = va.agent_id
+        LEFT JOIN auth.users agu ON agu.id = va.agent_id
         WHERE p.id = $1 AND p.deleted_at IS NULL
         """,
         product_id,
@@ -857,13 +859,14 @@ async def list_admin_products(
                p.availability_type, p.condition, p.asking_price, p.currency,
                p.location_country, p.location_port, p.status,
                p.created_at, p.seller_id, pr.company_name AS seller_company,
-               COALESCE(ap.full_name, ap.email) AS verification_agent
+               COALESCE(ap.full_name, agu.email) AS verification_agent
         FROM marketplace.products p
         LEFT JOIN marketplace.categories c ON c.id = p.category_id
         LEFT JOIN public.profiles pr ON pr.id = p.seller_id
         LEFT JOIN marketplace.verification_assignments va
                ON va.product_id = p.id AND va.cycle_number = p.verification_cycle + 1
         LEFT JOIN public.profiles ap ON ap.id = va.agent_id
+        LEFT JOIN auth.users agu ON agu.id = va.agent_id
         WHERE {where_clause}
         ORDER BY p.created_at DESC
         LIMIT ${len(params)+1} OFFSET ${len(params)+2}
