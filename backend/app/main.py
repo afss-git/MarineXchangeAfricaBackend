@@ -203,11 +203,15 @@ async def health_check():
     misconfigurations without reading server logs.
     """
     db_ok = await check_db_connection()
+    # admin_buyers_sellers_v1 flag — present once buyers/sellers routers are loaded
+    registered = [r.path for r in app.routes]
     return {
         "status": "healthy" if db_ok else "degraded",
         "version": settings.APP_VERSION,
         "environment": settings.ENVIRONMENT,
         "database": "connected" if db_ok else "unreachable — check DATABASE_URL in .env",
+        "admin_buyers_sellers": any("/admin/buyers" in p for p in registered),
+        "route_count": len(registered),
     }
 
 
