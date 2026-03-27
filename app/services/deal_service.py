@@ -879,6 +879,49 @@ async def list_deals(
     return [dict(r) for r in rows]
 
 
+async def list_seller_deals(
+    db: asyncpg.Connection, filters: dict, seller: dict
+) -> list[dict]:
+    """List deals where the current user is the seller."""
+    conditions = [f"d.seller_id = $1"]
+    values: list[Any] = [seller["id"]]
+    idx = 2
+
+    if filters.get("status"):
+        conditions.append(f"d.status = ${idx}")
+        values.append(filters["status"])
+        idx += 1
+
+    where_clause = f"WHERE {' AND '.join(conditions)}"
+
+    page = int(filters.get("page", 1))
+    page_size = int(filters.get("page_size", 20))
+    offset = (page - 1) * page_size
+
+    rows = await db.fetch(
+        f"""
+        SELECT
+            d.id, d.deal_ref, d.deal_type, d.status,
+            d.total_price, d.currency,
+            d.created_at, d.updated_at,
+            bp.full_name  AS buyer_name,
+            bu.email      AS buyer_email,
+            sp.full_name  AS seller_name,
+            pr.title      AS product_title
+        FROM finance.deals d
+        LEFT JOIN public.profiles bp ON bp.id = d.buyer_id
+        LEFT JOIN auth.users bu       ON bu.id = d.buyer_id
+        LEFT JOIN public.profiles sp  ON sp.id = d.seller_id
+        LEFT JOIN marketplace.products pr ON pr.id = d.product_id
+        {where_clause}
+        ORDER BY d.created_at DESC
+        LIMIT {page_size} OFFSET {offset}
+        """,
+        *values,
+    )
+    return [dict(r) for r in rows]
+
+
 async def cancel_deal(
     db: asyncpg.Connection, deal_id: UUID, reason: str, admin: dict
 ) -> dict:

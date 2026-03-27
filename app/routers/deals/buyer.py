@@ -13,7 +13,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, Request, status
 
-from app.deps import BuyerUser, CurrentUser, DbConn
+from app.deps import BuyerUser, CurrentUser, DbConn, SellerUser
 from app.schemas.deals import (
     AcceptDealRequest,
     DealListResponse,
@@ -45,6 +45,22 @@ async def list_my_deals(
         "page_size": page_size,
     }
     return await deal_service.list_deals(db, filters, current_user)
+
+
+@router.get(
+    "/my-sales",
+    response_model=list[DealListResponse],
+    summary="List deals where I am the seller",
+)
+async def list_my_sales(
+    db: DbConn,
+    current_user: SellerUser,
+    deal_status: str | None = Query(default=None, alias="status"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+):
+    filters = {"status": deal_status, "page": page, "page_size": page_size}
+    return await deal_service.list_seller_deals(db, filters, current_user)
 
 
 @router.get(

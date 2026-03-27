@@ -648,10 +648,17 @@ async def get_product_detail(
         """
         SELECT p.*,
                c.name   AS category_name,
-               pr.company_name AS seller_company
+               pr.company_name AS seller_company,
+               pr.email        AS seller_email,
+               pr.phone        AS seller_phone,
+               COALESCE(ap.full_name, ap.email) AS verification_agent,
+               va.id AS verification_assignment_id
         FROM marketplace.products p
         LEFT JOIN marketplace.categories c ON c.id = p.category_id
         LEFT JOIN public.profiles pr ON pr.id = p.seller_id
+        LEFT JOIN marketplace.verification_assignments va
+               ON va.product_id = p.id AND va.cycle_number = p.verification_cycle + 1
+        LEFT JOIN public.profiles ap ON ap.id = va.agent_id
         WHERE p.id = $1 AND p.deleted_at IS NULL
         """,
         product_id,
@@ -849,10 +856,14 @@ async def list_admin_products(
         SELECT p.id, p.title, p.category_id, c.name AS category_name,
                p.availability_type, p.condition, p.asking_price, p.currency,
                p.location_country, p.location_port, p.status,
-               p.created_at, p.seller_id, pr.company_name AS seller_company
+               p.created_at, p.seller_id, pr.company_name AS seller_company,
+               COALESCE(ap.full_name, ap.email) AS verification_agent
         FROM marketplace.products p
         LEFT JOIN marketplace.categories c ON c.id = p.category_id
         LEFT JOIN public.profiles pr ON pr.id = p.seller_id
+        LEFT JOIN marketplace.verification_assignments va
+               ON va.product_id = p.id AND va.cycle_number = p.verification_cycle + 1
+        LEFT JOIN public.profiles ap ON ap.id = va.agent_id
         WHERE {where_clause}
         ORDER BY p.created_at DESC
         LIMIT ${len(params)+1} OFFSET ${len(params)+2}
@@ -1269,14 +1280,15 @@ async def submit_verification_report(
 
     product_id = assignment["product_id"]
 
-    # Map outcome to product status
+    # Map frontend recommendation to DB outcome
+    outcome = payload.outcome  # property on schema does the mapping
     new_product_status = (
-        "pending_approval" if payload.outcome == "verified"
+        "pending_approval" if outcome == "verified"
         else "verification_failed"
     )
 
     async with db.transaction():
-        # Create immutable report
+        # Create immutable report — map frontend fields to DB columns
         report = await db.fetchrow(
             """
             INSERT INTO marketplace.verification_reports
@@ -1287,11 +1299,11 @@ async def submit_verification_report(
             """,
             assignment_id,
             agent_id,
-            payload.outcome,
-            payload.findings,
-            payload.asset_condition,
-            payload.issues_found,
-            payload.recommendations,
+            outcome,
+            payload.notes,                  # findings ← notes
+            payload.condition_confirmed,    # asset_condition ← condition_confirmed
+            None,                           # issues_found (not in new form)
+            payload.price_assessment,       # recommendations ← price_assessment
         )
 
         # Mark assignment as report_submitted
@@ -1381,7 +1393,7 @@ async def get_assignment_detail(
     assignment_id: uuid.UUID,
     actor: dict,
 ) -> dict:
-    """Loads a single assignment with product detail."""
+    """Loads a single assignment with inlined product fields, images, specs, and report."""
     agent_id = uuid.UUID(str(actor["id"]))
     roles = actor.get("roles", [])
 
@@ -1397,11 +1409,16 @@ async def get_assignment_detail(
             EXISTS(
                 SELECT 1 FROM marketplace.verification_reports vr
                 WHERE vr.assignment_id = va.id
-            ) AS report_submitted
+            ) AS report_submitted,
+            mp.asking_price, mp.currency, mp.condition,
+            mp.location_country, mp.location_port, mp.description,
+            mp.availability_type,
+            mc.name AS category_name
         FROM marketplace.verification_assignments va
         JOIN marketplace.products mp ON mp.id = va.product_id
         LEFT JOIN public.profiles pr ON pr.id = mp.seller_id
         LEFT JOIN public.profiles ab ON ab.id = va.assigned_by
+        LEFT JOIN marketplace.categories mc ON mc.id = mp.category_id
         WHERE va.id = $1
         """,
         assignment_id,
@@ -1411,7 +1428,47 @@ async def get_assignment_detail(
     if "admin" not in roles and str(row["agent_id"]) != str(agent_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
 
-    return dict(row)
+    result = dict(row)
+    product_id = result["product_id"]
+
+    # Load images with signed URLs
+    result["images"] = await _load_product_images(db, product_id)
+    # Load attribute values
+    result["attribute_values"] = await _enrich_attribute_values(db, product_id)
+
+    # Load report if submitted, mapped to frontend-compatible field names
+    if result["report_submitted"]:
+        rep = await db.fetchrow(
+            """
+            SELECT id, assignment_id, outcome, findings, asset_condition,
+                   recommendations, submitted_at
+            FROM marketplace.verification_reports
+            WHERE assignment_id = $1
+            """,
+            assignment_id,
+        )
+        if rep:
+            _outcome_map = {
+                "verified": "approve",
+                "failed": "reject",
+                "requires_clarification": "request_corrections",
+            }
+            result["report"] = {
+                "id": rep["id"],
+                "assignment_id": rep["assignment_id"],
+                "recommendation": _outcome_map.get(rep["outcome"], rep["outcome"]),
+                "condition_confirmed": rep["asset_condition"],
+                "price_assessment": rep["recommendations"],
+                "documentation_complete": True,
+                "notes": rep["findings"],
+                "created_at": rep["submitted_at"],
+            }
+        else:
+            result["report"] = None
+    else:
+        result["report"] = None
+
+    return result
 
 
 # ══════════════════════════════════════════════════════════════════════════════

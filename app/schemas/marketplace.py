@@ -308,6 +308,7 @@ class ProductListItemResponse(BaseModel):
     created_at:         datetime
     seller_id:          UUID
     seller_company:     str | None
+    verification_agent: str | None = None  # name of currently assigned agent
 
     model_config = {"from_attributes": True}
 
@@ -336,6 +337,13 @@ class ProductDetailResponse(BaseModel):
     contact:            ProductContactResponse | None   # None for anonymous public view
     created_at:         datetime
     updated_at:         datetime
+    verification_agent:      str | None = None  # name of currently assigned agent
+    verification_assignment_id: UUID | None = None
+    seller_email:            str | None = None
+    seller_phone:            str | None = None
+    submitted_at:            datetime | None = None
+    admin_notes:             str | None = None
+    rejection_reason:        str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -375,6 +383,14 @@ class UpdateVerificationAssignmentRequest(BaseModel):
         return v
 
 
+_RECOMMENDATION_TO_OUTCOME = {
+    "approve": "verified",
+    "reject": "failed",
+    "request_corrections": "requires_clarification",
+}
+_OUTCOME_TO_RECOMMENDATION = {v: k for k, v in _RECOMMENDATION_TO_OUTCOME.items()}
+
+
 class SubmitVerificationReportRequest(BaseModel):
     """
     Agent submits a verification report (immutable after submission).
@@ -382,23 +398,40 @@ class SubmitVerificationReportRequest(BaseModel):
     """
     model_config = {"extra": "forbid"}
 
-    outcome:            str
-    findings:           str          = Field(min_length=10, max_length=10_000)
-    asset_condition:    str | None   = Field(default=None, max_length=500)
-    issues_found:       str | None   = Field(default=None, max_length=5000)
-    recommendations:    str | None   = Field(default=None, max_length=5000)
-    attribute_updates:  list[AttributeValueInput] = []
+    condition_confirmed:    str          = Field(min_length=1, max_length=500)
+    price_assessment:       str          = Field(min_length=1, max_length=1000)
+    documentation_complete: bool         = True
+    notes:                  str          = Field(min_length=10, max_length=10_000)
+    recommendation:         str
+    attribute_updates:      list[AttributeValueInput] = []
 
-    @field_validator("outcome")
+    @field_validator("recommendation")
     @classmethod
-    def validate_outcome(cls, v: str) -> str:
-        if v not in VERIFICATION_OUTCOMES:
-            raise ValueError(f"outcome must be one of: {sorted(VERIFICATION_OUTCOMES)}")
+    def validate_recommendation(cls, v: str) -> str:
+        if v not in _RECOMMENDATION_TO_OUTCOME:
+            raise ValueError(f"recommendation must be one of: {sorted(_RECOMMENDATION_TO_OUTCOME)}")
         return v
+
+    @property
+    def outcome(self) -> str:
+        return _RECOMMENDATION_TO_OUTCOME[self.recommendation]
+
+
+class VerificationReportOut(BaseModel):
+    id:                     UUID
+    assignment_id:          UUID
+    recommendation:         str
+    condition_confirmed:    str | None
+    price_assessment:       str | None
+    documentation_complete: bool
+    notes:                  str
+    created_at:             datetime
+
+    model_config = {"from_attributes": True}
 
 
 class VerificationAssignmentResponse(BaseModel):
-    """Agent's view of a verification assignment."""
+    """Agent's view of a verification assignment — includes inlined product fields."""
     id:                 UUID
     product_id:         UUID
     product_title:      str
@@ -412,6 +445,18 @@ class VerificationAssignmentResponse(BaseModel):
     created_at:         datetime
     updated_at:         datetime
     report_submitted:   bool
+    # Inlined product fields
+    asking_price:       Decimal | None = None
+    currency:           str | None = None
+    condition:          str | None = None
+    location_country:   str | None = None
+    location_port:      str | None = None
+    category_name:      str | None = None
+    availability_type:  str | None = None
+    description:        str | None = None
+    images:             list[dict] = []
+    attribute_values:   list[dict] = []
+    report:             VerificationReportOut | None = None
 
     model_config = {"from_attributes": True}
 

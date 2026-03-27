@@ -46,7 +46,8 @@ _starlette_config.Config._read_file = _utf8_read_file  # type: ignore[method-ass
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse
+from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
+from fastapi.responses import HTMLResponse, JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -95,6 +96,15 @@ async def lifespan(app: FastAPI):
 
 # ── FastAPI App ───────────────────────────────────────────────────────────────
 
+_DOCS_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "img-src 'self' data: https://fastapi.tiangolo.com https://cdn.jsdelivr.net; "
+    "font-src 'self' https://cdn.jsdelivr.net; "
+    "frame-ancestors 'none'"
+)
+
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
@@ -102,11 +112,27 @@ app = FastAPI(
         "MarineXchange Africa — B2B Marketplace API for high-value maritime and "
         "industrial asset transactions across Africa."
     ),
-    docs_url="/docs" if not settings.is_production else None,   # Disable Swagger in prod
-    redoc_url="/redoc" if not settings.is_production else None,
+    docs_url=None,       # Served manually below with correct CSP
+    redoc_url=None,
     openapi_url="/openapi.json" if not settings.is_production else None,
     lifespan=lifespan,
 )
+
+# ── Custom Docs endpoints (only in development) ───────────────────────────────
+# Served manually so we can set a permissive CSP just for these paths,
+# while keeping the strict API CSP enforced by RequestContextMiddleware.
+
+if not settings.is_production:
+    @app.get("/docs", include_in_schema=False)
+    async def swagger_ui():
+        html = get_swagger_ui_html(openapi_url="/openapi.json", title=settings.APP_NAME)
+        return HTMLResponse(content=html.body, headers={"Content-Security-Policy": _DOCS_CSP})
+
+    @app.get("/redoc", include_in_schema=False)
+    async def redoc_ui():
+        html = get_redoc_html(openapi_url="/openapi.json", title=settings.APP_NAME)
+        return HTMLResponse(content=html.body, headers={"Content-Security-Policy": _DOCS_CSP})
+
 
 # ── Middleware (order matters — outermost first) ───────────────────────────────
 
@@ -177,11 +203,15 @@ async def health_check():
     misconfigurations without reading server logs.
     """
     db_ok = await check_db_connection()
+    # admin_buyers_sellers_v1 flag — present once buyers/sellers routers are loaded
+    registered = [r.path for r in app.routes]
     return {
         "status": "healthy" if db_ok else "degraded",
         "version": settings.APP_VERSION,
         "environment": settings.ENVIRONMENT,
         "database": "connected" if db_ok else "unreachable — check DATABASE_URL in .env",
+        "admin_buyers_sellers": any("/admin/buyers" in p for p in registered),
+        "route_count": len(registered),
     }
 
 
