@@ -468,12 +468,14 @@ export default function EditListingPage() {
   const status = listing.status
   const badge = statusBadge[status] ?? { style: "bg-gray-100 text-text-secondary border-gray-200", label: status }
   const agentAssigned = !!listing.verification_assignment_id
-  // Backend only allows edits on draft or pending_reverification
-  const canEdit   = status === "draft" || status === "pending_reverification"
+  // Editable: draft, pending_reverification, OR pending_verification with no agent yet
+  const canEdit   = status === "draft" || status === "pending_reverification" ||
+                    (status === "pending_verification" && !agentAssigned)
   const canSubmit = status === "draft" || status === "rejected" || status === "pending_reverification" || status === "verification_failed"
   const isActive  = status === "active"
-  // Any under-review state locks the form
-  const isUnderReview = ["pending_verification", "pending_approval"].includes(status)
+  // Lock form once agent is assigned or in final review states
+  const isUnderReview = status === "pending_approval" ||
+                        (status === "pending_verification" && agentAssigned)
   const isPendingLocked = isUnderReview
 
   return (
@@ -542,13 +544,25 @@ export default function EditListingPage() {
         </div>
       )}
 
-      {status === "pending_verification" && (
+      {status === "pending_verification" && !agentAssigned && (
         <div className="flex items-center gap-3 p-4 bg-warning/5 border border-warning/20 rounded-xl">
           <Clock className="w-5 h-5 text-warning shrink-0" />
           <div>
-            <p className="text-sm font-semibold text-text-primary">Under review — editing locked</p>
+            <p className="text-sm font-semibold text-text-primary">Awaiting agent assignment — edits still allowed</p>
             <p className="text-xs text-text-secondary mt-0.5">
-              Your listing has been submitted and is awaiting agent assignment. No edits are allowed while under review.
+              Your listing is under review. You can still make changes until an agent is assigned.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {status === "pending_verification" && agentAssigned && (
+        <div className="flex items-center gap-3 p-4 bg-warning/5 border border-warning/20 rounded-xl">
+          <Lock className="w-5 h-5 text-warning shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-text-primary">Agent assigned — editing locked</p>
+            <p className="text-xs text-text-secondary mt-0.5">
+              A verification agent has been assigned. Editing is disabled until the review is complete.
             </p>
           </div>
         </div>

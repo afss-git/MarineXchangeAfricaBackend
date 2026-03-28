@@ -451,18 +451,41 @@ async def update_product_draft(
     payload: ProductUpdateRequest,
     actor: dict,
 ) -> dict:
-    """Seller updates a listing that is in 'draft' or 'pending_reverification' status."""
+    """Seller updates a listing.
+
+    Allowed when status is:
+    - draft
+    - pending_reverification
+    - pending_verification with no agent assigned yet
+    """
     seller_id = uuid.UUID(str(actor["id"]))
     product = await _get_product_for_seller(db, product_id, seller_id)
 
-    if product["status"] not in ("draft", "pending_reverification"):
+    if product["status"] not in ("draft", "pending_reverification", "pending_verification"):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"Only draft or pending_reverification listings can be edited. "
+                f"Only draft, pending_verification (before agent assignment), or "
+                f"pending_reverification listings can be edited. "
                 f"Current status: {product['status']}"
             ),
         )
+
+    # For pending_verification: block edits once an agent has been assigned
+    if product["status"] == "pending_verification":
+        assignment = await db.fetchrow(
+            """
+            SELECT id FROM marketplace.verification_assignments
+            WHERE product_id = $1 AND cycle_number = $2
+            """,
+            product_id,
+            product["verification_cycle"] + 1,
+        )
+        if assignment:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Editing is no longer allowed — a verification agent has been assigned to this listing.",
+            )
 
     # Build SET clause dynamically from non-None fields
     updates: dict[str, Any] = {}
