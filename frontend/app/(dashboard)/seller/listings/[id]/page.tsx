@@ -65,12 +65,16 @@ const CURRENCIES = ["USD", "EUR", "GBP", "NGN", "GHS", "KES", "ZAR"]
 // ── Status config ─────────────────────────────────────────────────────────────
 
 const statusBadge: Record<string, { style: string; label: string }> = {
-  draft:    { style: "bg-gray-100 text-text-secondary border-gray-200", label: "Draft" },
-  pending:  { style: "bg-warning/10 text-warning border-warning/20",    label: "Under Review" },
-  active:   { style: "bg-success/10 text-success border-success/20",    label: "Active" },
-  rejected: { style: "bg-danger/10 text-danger border-danger/20",       label: "Rejected" },
-  sold:     { style: "bg-ocean/10 text-ocean border-ocean/20",          label: "Sold" },
-  inactive: { style: "bg-gray-100 text-text-secondary border-gray-200", label: "Inactive" },
+  draft:                  { style: "bg-gray-100 text-text-secondary border-gray-200",        label: "Draft" },
+  pending_verification:   { style: "bg-warning/10 text-warning border-warning/20",           label: "Under Review" },
+  pending_reverification: { style: "bg-orange-50 text-orange-600 border-orange-200",         label: "Needs Revision" },
+  pending_approval:       { style: "bg-ocean/10 text-ocean border-ocean/20",                 label: "Awaiting Approval" },
+  active:                 { style: "bg-success/10 text-success border-success/20",           label: "Active" },
+  rejected:               { style: "bg-danger/10 text-danger border-danger/20",              label: "Rejected" },
+  verification_failed:    { style: "bg-danger/10 text-danger border-danger/20",              label: "Verification Failed" },
+  sold:                   { style: "bg-ocean/10 text-ocean border-ocean/20",                 label: "Sold" },
+  inactive:               { style: "bg-gray-100 text-text-secondary border-gray-200",        label: "Inactive" },
+  delisted:               { style: "bg-gray-100 text-text-secondary border-gray-200",        label: "Delisted" },
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -167,11 +171,11 @@ function stepIndex(
   agentAssigned: boolean,
   verif: SellerVerificationStatus | null,
 ): number {
-  if (productStatus === "active" || productStatus === "rejected") return 5
-  if (verif?.report_submitted) return 4
+  if (["active", "rejected", "verification_failed"].includes(productStatus)) return 5
+  if (productStatus === "pending_approval" || verif?.report_submitted) return 4
   if (verif?.status === "in_review") return 3
   if (agentAssigned) return 2
-  return 1  // submitted
+  return 1  // submitted / pending_verification
 }
 
 interface VerificationTimelineProps {
@@ -462,14 +466,15 @@ export default function EditListingPage() {
   if (!listing) return null
 
   const status = listing.status
-  const badge = statusBadge[status] ?? statusBadge["draft"]
+  const badge = statusBadge[status] ?? { style: "bg-gray-100 text-text-secondary border-gray-200", label: status }
   const agentAssigned = !!listing.verification_assignment_id
-  // Seller can edit when: draft, rejected, OR pending but agent hasn't been assigned yet
-  const canEdit = status === "draft" || status === "rejected" || (status === "pending" && !agentAssigned)
-  const canSubmit = status === "draft" || status === "rejected"
-  const isActive = status === "active"
-  const isPending = status === "pending"
-  const isPendingLocked = isPending && agentAssigned
+  // Backend only allows edits on draft or pending_reverification
+  const canEdit   = status === "draft" || status === "pending_reverification"
+  const canSubmit = status === "draft" || status === "rejected" || status === "pending_reverification" || status === "verification_failed"
+  const isActive  = status === "active"
+  // Any under-review state locks the form
+  const isUnderReview = ["pending_verification", "pending_approval"].includes(status)
+  const isPendingLocked = isUnderReview
 
   return (
     <div className="space-y-6">
@@ -518,7 +523,7 @@ export default function EditListingPage() {
               {isSubmitting
                 ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
                 : <Send className="w-4 h-4 mr-1.5" />}
-              {status === "rejected" ? "Resubmit" : "Submit for Review"}
+              {["rejected", "pending_reverification", "verification_failed"].includes(status) ? "Resubmit" : "Submit for Review"}
             </Button>
           )}
         </div>
@@ -537,25 +542,37 @@ export default function EditListingPage() {
         </div>
       )}
 
-      {isPending && !agentAssigned && (
+      {status === "pending_verification" && (
         <div className="flex items-center gap-3 p-4 bg-warning/5 border border-warning/20 rounded-xl">
           <Clock className="w-5 h-5 text-warning shrink-0" />
           <div>
-            <p className="text-sm font-semibold text-text-primary">Pending review — edits still allowed</p>
+            <p className="text-sm font-semibold text-text-primary">Under review — editing locked</p>
             <p className="text-xs text-text-secondary mt-0.5">
-              Your listing is awaiting assignment. You can still make edits until an agent begins verification.
+              Your listing has been submitted and is awaiting agent assignment. No edits are allowed while under review.
             </p>
           </div>
         </div>
       )}
 
-      {isPendingLocked && (
-        <div className="flex items-center gap-3 p-4 bg-warning/5 border border-warning/20 rounded-xl">
-          <Clock className="w-5 h-5 text-warning shrink-0" />
+      {status === "pending_approval" && (
+        <div className="flex items-center gap-3 p-4 bg-ocean/5 border border-ocean/20 rounded-xl">
+          <Clock className="w-5 h-5 text-ocean shrink-0" />
           <div>
-            <p className="text-sm font-semibold text-text-primary">Verification in progress — editing locked</p>
+            <p className="text-sm font-semibold text-text-primary">Awaiting admin decision</p>
             <p className="text-xs text-text-secondary mt-0.5">
-              An agent has begun verifying this listing. Editing is disabled until the review is complete.
+              The verification agent has filed their report. An admin is reviewing and will make a final decision shortly.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {status === "pending_reverification" && (
+        <div className="flex items-center gap-3 p-4 bg-orange-50 border border-orange-200 rounded-xl">
+          <RefreshCw className="w-5 h-5 text-orange-500 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-text-primary">Corrections requested — please revise and resubmit</p>
+            <p className="text-xs text-text-secondary mt-0.5">
+              The admin has requested changes. Update your listing details and click Resubmit.
             </p>
           </div>
         </div>
@@ -779,7 +796,7 @@ export default function EditListingPage() {
                 <Button
                   variant="outline"
                   className="w-full border-dashed"
-                  disabled={isUploading || isPendingLocked}
+                  disabled={isUploading || isUnderReview}
                   onClick={() => fileRef.current?.click()}
                 >
                   {isUploading
@@ -849,10 +866,10 @@ export default function EditListingPage() {
           {canSubmit && (
             <div className="bg-ocean/5 border border-ocean/20 rounded-xl p-4">
               <p className="text-sm font-semibold text-text-primary mb-1">
-                {status === "rejected" ? "Ready to resubmit?" : "Ready to go live?"}
+                {["rejected", "pending_reverification", "verification_failed"].includes(status) ? "Ready to resubmit?" : "Ready to go live?"}
               </p>
               <p className="text-xs text-text-secondary mb-3">
-                {status === "rejected"
+                {["rejected", "pending_reverification", "verification_failed"].includes(status)
                   ? "Address the feedback above and submit again for admin review."
                   : "Save your changes first, then submit for admin review. You'll be notified once approved."}
               </p>
@@ -864,7 +881,7 @@ export default function EditListingPage() {
                 {isSubmitting
                   ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
                   : <Send className="w-4 h-4 mr-1.5" />}
-                {status === "rejected" ? "Resubmit for Review" : "Submit for Review"}
+                {["rejected", "pending_reverification", "verification_failed"].includes(status) ? "Resubmit for Review" : "Submit for Review"}
               </Button>
             </div>
           )}

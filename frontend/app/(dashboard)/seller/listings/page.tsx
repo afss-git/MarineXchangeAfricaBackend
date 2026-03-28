@@ -30,11 +30,15 @@ import { useSellerListings } from "@/lib/hooks"
 const PAGE_SIZE = 15
 
 const statusStyle: Record<string, string> = {
-  active: "bg-success/10 text-success border-success/20",
-  draft: "bg-gray-100 text-text-secondary border-gray-200",
-  sold: "bg-ocean/10 text-ocean border-ocean/20",
-  pending_review: "bg-warning/10 text-warning border-warning/20",
-  rejected: "bg-danger/10 text-danger border-danger/20",
+  active:                 "bg-success/10 text-success border-success/20",
+  draft:                  "bg-gray-100 text-text-secondary border-gray-200",
+  sold:                   "bg-ocean/10 text-ocean border-ocean/20",
+  pending_verification:   "bg-warning/10 text-warning border-warning/20",
+  pending_reverification: "bg-orange-50 text-orange-600 border-orange-200",
+  pending_approval:       "bg-ocean/10 text-ocean border-ocean/20",
+  rejected:               "bg-danger/10 text-danger border-danger/20",
+  verification_failed:    "bg-danger/10 text-danger border-danger/20",
+  inactive:               "bg-gray-100 text-text-secondary border-gray-200",
 }
 
 const tabs = ["All", "Active", "Draft", "Pending Review", "Sold"]
@@ -77,7 +81,7 @@ export default function SellerListingsPage() {
   const tabStatus: Record<string, string> = {
     "Active": "active",
     "Draft": "draft",
-    "Pending Review": "pending_review",
+    "Pending Review": "pending_verification",
     "Sold": "sold",
   }
 
