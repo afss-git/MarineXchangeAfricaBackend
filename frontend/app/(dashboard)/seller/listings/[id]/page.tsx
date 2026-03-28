@@ -47,12 +47,9 @@ import {
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const CONDITIONS = [
-  "New",
-  "Used — Excellent",
-  "Used — Good",
-  "Used — Fair",
-  "Refurbished",
-  "For Parts",
+  { label: "New",         value: "new" },
+  { label: "Used",        value: "used" },
+  { label: "Refurbished", value: "refurbished" },
 ]
 
 const COUNTRIES = [
@@ -666,7 +663,7 @@ export default function EditListingPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {CONDITIONS.map((c) => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                      <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
