@@ -437,7 +437,7 @@ class VerificationAssignmentResponse(BaseModel):
     product_title:      str
     seller_company:     str | None
     agent_id:           UUID
-    assigned_by_name:   str
+    assigned_by_name:   str | None
     cycle_number:       int
     status:             str
     scheduled_date:     date | None
