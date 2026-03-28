@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 
 from app.deps import DbConn, require_roles
 from app.schemas.marketplace import (
@@ -34,6 +34,7 @@ from app.services.marketplace_service import (
     list_attributes,
     submit_verification_report,
     update_verification_assignment,
+    upload_verification_evidence_file,
 )
 
 router = APIRouter(tags=["Marketplace — Verification"])
@@ -116,6 +117,24 @@ async def submit_report(
     current_user: dict = AgentOnly,
 ):
     return await submit_verification_report(db, assignment_id, payload, current_user)
+
+
+@router.post(
+    "/verification/assignments/{assignment_id}/evidence",
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload evidence file",
+    description=(
+        "Upload a single inspection image or document to attach to the verification report. "
+        "Returns {storage_path, signed_url, file_type}. "
+        "Collect storage_paths and pass them in the evidence_files field of the submit-report request."
+    ),
+)
+async def upload_evidence(
+    assignment_id: UUID,
+    file: UploadFile = File(...),
+    current_user: dict = AgentOnly,
+):
+    return await upload_verification_evidence_file(assignment_id, file, current_user)
 
 
 @router.put(

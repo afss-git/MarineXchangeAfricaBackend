@@ -2,11 +2,10 @@
 
 import { useState, useEffect } from "react"
 import {
-  Search, Clock, CheckCircle2, XCircle, RefreshCw, Eye,
+  Search, CheckCircle2, RefreshCw, Eye,
   ChevronDown, ChevronUp, AlertCircle, Loader2, Package,
-  FileText, ExternalLink, ImageIcon,
+  FileText, Upload, X, File as FileIcon,
 } from "lucide-react"
-import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
@@ -51,6 +50,116 @@ function AssignBadge({ status }: { status: string }) {
 
 // ── Expanded assignment detail + report form ───────────────────────────────────
 
+// ── Evidence file state ────────────────────────────────────────────────────────
+
+interface EvidenceFile {
+  file: File
+  fileType: "image" | "document"
+  description: string
+  uploading: boolean
+  storagePath: string | null
+  signedUrl: string | null
+  error: string | null
+}
+
+function EvidenceUploadSection({
+  assignmentId,
+  label,
+  accept,
+  fileType,
+  files,
+  onChange,
+}: {
+  assignmentId: string
+  label: string
+  accept: string
+  fileType: "image" | "document"
+  files: EvidenceFile[]
+  onChange: (files: EvidenceFile[]) => void
+}) {
+  async function handleAdd(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(e.target.files ?? [])
+    e.target.value = ""
+    if (!selected.length) return
+
+    const newEntries: EvidenceFile[] = selected.map((f) => ({
+      file: f, fileType, description: "", uploading: true,
+      storagePath: null, signedUrl: null, error: null,
+    }))
+    onChange([...files, ...newEntries])
+
+    const results = await Promise.all(
+      newEntries.map(async (entry) => {
+        try {
+          const res = await verificationAgent.uploadEvidenceFile(assignmentId, entry.file)
+          return { ...entry, uploading: false, storagePath: res.storage_path, signedUrl: res.signed_url }
+        } catch (err: unknown) {
+          return { ...entry, uploading: false, error: (err as Error)?.message ?? "Upload failed" }
+        }
+      })
+    )
+
+    onChange((prev: EvidenceFile[]) => {
+      const base = prev.slice(0, prev.length - newEntries.length)
+      return [...base, ...results]
+    })
+  }
+
+  function removeFile(idx: number) {
+    onChange(files.filter((_, i) => i !== idx))
+  }
+
+  function setDesc(idx: number, val: string) {
+    onChange(files.map((f, i) => i === idx ? { ...f, description: val } : f))
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <label className="text-xs font-medium text-text-secondary">{label}</label>
+        <label className="cursor-pointer flex items-center gap-1.5 text-xs text-ocean hover:text-ocean-dark font-medium">
+          <Upload className="w-3.5 h-3.5" /> Add files
+          <input type="file" accept={accept} multiple className="hidden" onChange={handleAdd} />
+        </label>
+      </div>
+
+      {files.length > 0 && (
+        <div className="space-y-2">
+          {files.map((f, idx) => (
+            <div key={idx} className="flex items-start gap-2 p-2.5 bg-gray-50 rounded-lg border border-border">
+              {f.fileType === "image" && f.signedUrl ? (
+                <img src={f.signedUrl} alt="" className="w-10 h-10 rounded object-cover shrink-0" />
+              ) : (
+                <div className="w-10 h-10 rounded bg-gray-200 flex items-center justify-center shrink-0">
+                  <FileIcon className="w-5 h-5 text-gray-500" />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-text-primary truncate">{f.file.name}</p>
+                {f.uploading && <p className="text-xs text-ocean mt-0.5">Uploading…</p>}
+                {f.error && <p className="text-xs text-danger mt-0.5">{f.error}</p>}
+                {f.storagePath && (
+                  <input
+                    value={f.description}
+                    onChange={(e) => setDesc(idx, e.target.value)}
+                    placeholder="Optional description…"
+                    className="mt-1 w-full text-xs px-2 py-1 border border-border rounded focus:outline-none focus:ring-1 focus:ring-ocean/30"
+                  />
+                )}
+              </div>
+              <button onClick={() => removeFile(idx)} className="text-text-secondary hover:text-danger shrink-0">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Assignment detail + report form ────────────────────────────────────────────
+
 function AssignmentPanel({ item, onReported }: {
   item: VerificationAssignmentItem
   onReported: () => void
@@ -66,6 +175,8 @@ function AssignmentPanel({ item, onReported }: {
   const [documentationComplete, setDocumentationComplete] = useState(true)
   const [notes, setNotes]                             = useState("")
   const [recommendation, setRecommendation]           = useState<"approve" | "reject" | "request_corrections">("approve")
+  const [evidenceImages, setEvidenceImages]           = useState<EvidenceFile[]>([])
+  const [evidenceDocs, setEvidenceDocs]               = useState<EvidenceFile[]>([])
   const [submitting, setSubmitting]                   = useState(false)
   const [reportError, setReportError]                 = useState<string | null>(null)
   const [submitted, setSubmitted]                     = useState(false)
@@ -94,6 +205,14 @@ function AssignmentPanel({ item, onReported }: {
     if (!priceAssessment.trim())    { setReportError("Price assessment is required."); return }
     if (notes.trim().length < 10)   { setReportError("Notes must be at least 10 characters."); return }
 
+    const allEvidence = [...evidenceImages, ...evidenceDocs]
+    const stillUploading = allEvidence.some((f) => f.uploading)
+    if (stillUploading) { setReportError("Please wait for all files to finish uploading."); return }
+
+    const evidenceFiles = allEvidence
+      .filter((f) => f.storagePath)
+      .map((f) => ({ storage_path: f.storagePath!, file_type: f.fileType, description: f.description }))
+
     setSubmitting(true)
     setReportError(null)
     try {
@@ -103,6 +222,7 @@ function AssignmentPanel({ item, onReported }: {
         documentation_complete: documentationComplete,
         notes: notes.trim(),
         recommendation,
+        evidence_files: evidenceFiles,
       })
       setSubmitted(true)
       onReported()
@@ -123,8 +243,9 @@ function AssignmentPanel({ item, onReported }: {
 
   const product      = detail
   const hasReport    = !!detail.report
-  const isAssigned   = item.status === "assigned"
-  const canSubmit    = !hasReport && !["completed"].includes(item.status)
+  // Use local detail.status (updated after "Start Verification") instead of the prop
+  const isAssigned   = (detail.status ?? item.status) === "assigned"
+  const canSubmit    = !hasReport && !["completed"].includes(detail.status ?? item.status)
 
   return (
     <div className="border-t border-border">
@@ -307,6 +428,26 @@ function AssignmentPanel({ item, onReported }: {
               className="text-sm resize-none"
             />
           </div>
+
+          {/* Evidence — Inspection Images */}
+          <EvidenceUploadSection
+            assignmentId={item.id}
+            label="Inspection Photos (optional)"
+            accept="image/jpeg,image/png,image/webp"
+            fileType="image"
+            files={evidenceImages}
+            onChange={setEvidenceImages}
+          />
+
+          {/* Evidence — Documents */}
+          <EvidenceUploadSection
+            assignmentId={item.id}
+            label="Supporting Documents (optional) — PDF, DOC, DOCX"
+            accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            fileType="document"
+            files={evidenceDocs}
+            onChange={setEvidenceDocs}
+          />
 
           {/* Recommendation */}
           <div>

@@ -972,6 +972,20 @@ async def list_admin_products(
 ALLOWED_MIME_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
 MIME_TO_EXT = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
 
+ALLOWED_EVIDENCE_MIME_TYPES = frozenset({
+    "image/jpeg", "image/png", "image/webp",
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+})
+EVIDENCE_MIME_TO_EXT = {
+    "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
+    "application/pdf": "pdf",
+    "application/msword": "doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+}
+EVIDENCE_MAX_SIZE_MB = 20
+
 
 async def upload_product_image(
     db: asyncpg.Connection,
@@ -1130,6 +1144,67 @@ async def delete_product_image(
             """,
             product_id,
         )
+
+
+async def upload_verification_evidence_file(
+    assignment_id: uuid.UUID,
+    file: UploadFile,
+    actor: dict,
+) -> dict:
+    """
+    Uploads a single evidence file (image or document) to Supabase Storage.
+    Returns {storage_path, signed_url, file_type} — no DB record is created yet;
+    the caller attaches paths to a SubmitVerificationReportRequest.
+    """
+    mime_type = file.content_type or ""
+    if mime_type not in ALLOWED_EVIDENCE_MIME_TYPES and file.filename:
+        guessed, _ = mimetypes.guess_type(file.filename)
+        mime_type = guessed or mime_type
+
+    if mime_type not in ALLOWED_EVIDENCE_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported file type. Allowed: JPEG, PNG, WebP, PDF, DOC, DOCX.",
+        )
+
+    file_bytes = await file.read()
+    max_bytes = EVIDENCE_MAX_SIZE_MB * 1024 * 1024
+    if len(file_bytes) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File exceeds maximum size of {EVIDENCE_MAX_SIZE_MB} MB.",
+        )
+
+    from app.core.file_validation import validate_magic_bytes
+    if not validate_magic_bytes(file_bytes, mime_type):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="File content does not match the declared type.",
+        )
+
+    file_id = uuid.uuid4()
+    ext = EVIDENCE_MIME_TO_EXT[mime_type]
+    storage_path = f"evidence/{assignment_id}/{file_id}.{ext}"
+
+    try:
+        supabase = await get_supabase_admin_client()
+        await supabase.storage.from_(STORAGE_BUCKET).upload(
+            storage_path, file_bytes, {"content-type": mime_type}
+        )
+    except Exception as exc:
+        logger.error("Evidence upload failed for %s: %s", storage_path, exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="File upload failed. Please try again.",
+        )
+
+    is_image = mime_type.startswith("image/")
+    signed_url = await _generate_signed_url(storage_path)
+    return {
+        "storage_path": storage_path,
+        "signed_url": signed_url,
+        "file_type": "image" if is_image else "document",
+    }
 
 
 async def set_primary_image(
@@ -1391,6 +1466,26 @@ async def submit_verification_report(
         if payload.attribute_updates:
             await _upsert_attribute_values(
                 db, product_id, payload.attribute_updates, agent_id
+            )
+
+        # Attach pre-uploaded evidence files
+        if payload.evidence_files:
+            await db.executemany(
+                """
+                INSERT INTO marketplace.verification_evidence
+                    (report_id, file_type, storage_path, description, uploaded_by)
+                VALUES ($1, $2, $3, $4, $5)
+                """,
+                [
+                    (
+                        report["id"],
+                        ev.file_type,
+                        ev.storage_path,
+                        ev.description or None,
+                        agent_id,
+                    )
+                    for ev in payload.evidence_files
+                ],
             )
 
     await write_audit_log(

@@ -377,7 +377,7 @@ class UpdateVerificationAssignmentRequest(BaseModel):
     @field_validator("status")
     @classmethod
     def validate_status(cls, v: str) -> str:
-        allowed = {"contacted", "inspection_scheduled", "inspection_done"}
+        allowed = {"in_progress", "contacted", "inspection_scheduled", "inspection_done"}
         if v not in allowed:
             raise ValueError(f"status must be one of: {sorted(allowed)}")
         return v
@@ -389,6 +389,13 @@ _RECOMMENDATION_TO_OUTCOME = {
     "request_corrections": "requires_clarification",
 }
 _OUTCOME_TO_RECOMMENDATION = {v: k for k, v in _RECOMMENDATION_TO_OUTCOME.items()}
+
+
+class EvidenceFileInput(BaseModel):
+    """A pre-uploaded evidence file to attach to a verification report."""
+    storage_path: str
+    file_type:    str = "image"   # "image" | "document"
+    description:  str = ""
 
 
 class SubmitVerificationReportRequest(BaseModel):
@@ -404,6 +411,7 @@ class SubmitVerificationReportRequest(BaseModel):
     notes:                  str          = Field(min_length=10, max_length=10_000)
     recommendation:         str
     attribute_updates:      list[AttributeValueInput] = []
+    evidence_files:         list[EvidenceFileInput]   = []
 
     @field_validator("recommendation")
     @classmethod

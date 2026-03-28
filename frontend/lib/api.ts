@@ -2311,10 +2311,20 @@ export const verificationAgent = {
       method: "PATCH", body: JSON.stringify({ status }),
     }),
 
+  uploadEvidenceFile: (assignmentId: string, file: File) => {
+    const fd = new FormData()
+    fd.append("file", file)
+    return upload<{ storage_path: string; signed_url: string; file_type: string }>(
+      `/marketplace/verification/assignments/${assignmentId}/evidence`,
+      fd,
+    )
+  },
+
   submitReport: (id: string, data: {
     condition_confirmed: string; price_assessment: string
     documentation_complete: boolean; notes: string
     recommendation: "approve" | "reject" | "request_corrections"
+    evidence_files?: { storage_path: string; file_type: string; description: string }[]
   }) => request<VerificationReportOut>(`/marketplace/verification/assignments/${id}/report`, {
     method: "POST", body: JSON.stringify(data),
   }),
