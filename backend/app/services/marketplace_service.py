@@ -1501,7 +1501,7 @@ async def get_assignment_detail(
     product_id = result["product_id"]
 
     # Load images with signed URLs
-    result["images"] = await _load_product_images(db, product_id)
+    result["images"] = await _enrich_images(db, product_id)
     # Load attribute values
     result["attribute_values"] = await _enrich_attribute_values(db, product_id)
 

@@ -54,8 +54,10 @@ export default function LoginPage() {
       const roles = data.user.roles
       if (roles.includes("admin") || roles.includes("finance_admin")) {
         router.push("/admin")
-      } else if (roles.includes("verification_agent") || roles.includes("buyer_agent")) {
+      } else if (roles.includes("buyer_agent")) {
         router.push("/agent/kyc")
+      } else if (roles.includes("verification_agent")) {
+        router.push("/agent/marketplace")
       } else if (roles.includes("seller") && !roles.includes("buyer")) {
         router.push("/seller")
       } else {
