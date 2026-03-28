@@ -1106,9 +1106,21 @@ async def delete_product_image(
     seller_id = uuid.UUID(str(actor["id"]))
     roles = actor.get("roles", [])
 
-    # Check ownership unless admin
+    # Check ownership and status unless admin
     if "admin" not in roles:
-        await _get_product_for_seller(db, product_id, seller_id)
+        product = await _get_product_for_seller(db, product_id, seller_id)
+        locked_statuses = {
+            "pending_verification", "under_verification",
+            "pending_approval", "approved", "active",
+        }
+        if product["status"] in locked_statuses:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Images cannot be deleted once a listing is submitted for verification. "
+                    f"Current status: {product['status']}"
+                ),
+            )
 
     image = await db.fetchrow(
         "SELECT id, storage_path, is_primary FROM marketplace.product_images WHERE id = $1 AND product_id = $2",
@@ -1627,10 +1639,33 @@ async def get_assignment_detail(
                 "notes": rep["findings"],
                 "created_at": rep["submitted_at"],
             }
+            # Load evidence files
+            evidence_rows = await db.fetch(
+                """
+                SELECT ve.id, ve.file_type, ve.storage_path, ve.description, ve.created_at
+                FROM marketplace.verification_evidence ve
+                WHERE ve.report_id = $1
+                ORDER BY ve.created_at ASC
+                """,
+                rep["id"],
+            )
+            evidence_with_urls = []
+            for ev in evidence_rows:
+                signed_url = await _generate_signed_url(ev["storage_path"])
+                evidence_with_urls.append({
+                    "id": str(ev["id"]),
+                    "file_type": ev["file_type"],
+                    "storage_path": ev["storage_path"],
+                    "description": ev["description"],
+                    "signed_url": signed_url,
+                    "created_at": ev["created_at"].isoformat() if ev["created_at"] else None,
+                })
+            result["evidence_files"] = evidence_with_urls
         else:
             result["report"] = None
     else:
         result["report"] = None
+        result["evidence_files"] = []
 
     return result
 

@@ -2268,15 +2268,23 @@ export interface VerificationReportOut {
   created_at: string
 }
 
+export interface VerificationEvidenceFile {
+  id: string; file_type: "image" | "document"; storage_path: string
+  description: string | null; signed_url: string; created_at: string | null
+}
+
 export interface VerificationAssignmentDetail extends VerificationAssignmentItem {
   asking_price: string | null; currency: string | null
   condition: string | null; location_country: string | null
   location_port: string | null; category_name: string | null
   availability_type: string | null; description: string | null
+  scheduled_date: string | null; contact_notes: string | null
+  seller_company: string | null; assigned_by_name: string | null
   images: { id: string; signed_url: string; is_primary: boolean }[]
   attribute_values: { attribute_id: string; attribute_name: string; value_text: string | null; value_numeric: number | null; value_boolean: boolean | null }[]
   report: VerificationReportOut | null
   report_submitted: boolean
+  evidence_files: VerificationEvidenceFile[]
 }
 
 export interface AttributeDefinition {
@@ -2608,6 +2616,7 @@ export interface AdminSellerDetail {
     id: string; title: string; status: string; asking_price: string; currency: string
     condition: string; availability_type: string; location_country: string; location_port: string | null
     category_name: string | null; verification_agent: string | null; agent_email: string | null
+    verification_assignment_id: string | null; description: string | null
     image_count: number; deal_count: number; created_at: string; updated_at: string
   }[]
   deals: {

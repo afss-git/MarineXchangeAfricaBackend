@@ -37,10 +37,12 @@ function ErrorBar({ msg }: { msg: string }) {
 // ── Status config ──────────────────────────────────────────────────────────────
 
 const ASSIGN_STATUS_CFG: Record<string, { label: string; className: string }> = {
-  assigned:          { label: "Assigned",       className: "bg-warning/10 text-warning border-warning/20" },
-  in_progress:       { label: "In Progress",    className: "bg-ocean/10 text-ocean border-ocean/20" },
-  report_submitted:  { label: "Report Done",    className: "bg-success/10 text-success border-success/20" },
-  completed:         { label: "Completed",      className: "bg-gray-100 text-gray-500 border-gray-200" },
+  assigned:             { label: "Assigned",            className: "bg-warning/10 text-warning border-warning/20" },
+  contacted:            { label: "In Progress",         className: "bg-ocean/10 text-ocean border-ocean/20" },
+  inspection_scheduled: { label: "Inspection Scheduled",className: "bg-ocean/10 text-ocean border-ocean/20" },
+  inspection_done:      { label: "Inspection Done",     className: "bg-success/10 text-success border-success/20" },
+  report_submitted:     { label: "Report Submitted",    className: "bg-success/10 text-success border-success/20" },
+  completed:            { label: "Completed",           className: "bg-gray-100 text-gray-500 border-gray-200" },
 }
 
 function AssignBadge({ status }: { status: string }) {
@@ -86,7 +88,8 @@ function EvidenceUploadSection({
       file: f, fileType, description: "", uploading: true,
       storagePath: null, signedUrl: null, error: null,
     }))
-    onChange([...files, ...newEntries])
+    const baseFiles = [...files]
+    onChange([...baseFiles, ...newEntries])
 
     const results = await Promise.all(
       newEntries.map(async (entry) => {
@@ -99,10 +102,7 @@ function EvidenceUploadSection({
       })
     )
 
-    onChange((prev: EvidenceFile[]) => {
-      const base = prev.slice(0, prev.length - newEntries.length)
-      return [...base, ...results]
-    })
+    onChange([...baseFiles, ...results])
   }
 
   function removeFile(idx: number) {
@@ -191,10 +191,10 @@ function AssignmentPanel({ item, onReported }: {
   async function handleMarkInProgress() {
     setMarkingProgress(true)
     try {
-      await verificationAgent.updateAssignment(item.id, "in_progress")
-      setDetail((prev) => prev ? { ...prev, status: "in_progress" } : prev)
-    } catch {
-      // silent
+      await verificationAgent.updateAssignment(item.id, "contacted")
+      setDetail((prev) => prev ? { ...prev, status: "contacted" } : prev)
+    } catch (e: unknown) {
+      setError((e as Error)?.message ?? "Failed to update assignment")
     } finally {
       setMarkingProgress(false)
     }
@@ -243,9 +243,10 @@ function AssignmentPanel({ item, onReported }: {
 
   const product      = detail
   const hasReport    = !!detail.report
+  const currentStatus = detail.status ?? item.status
   // Use local detail.status (updated after "Start Verification") instead of the prop
-  const isAssigned   = (detail.status ?? item.status) === "assigned"
-  const canSubmit    = !hasReport && !["completed"].includes(detail.status ?? item.status)
+  const isAssigned   = currentStatus === "assigned"
+  const canSubmit    = !hasReport && !["report_submitted", "completed"].includes(currentStatus)
 
   return (
     <div className="border-t border-border">
@@ -511,12 +512,12 @@ export default function AgentMarketplacePage() {
   const FILTER_TABS = [
     { value: "",                 label: "All" },
     { value: "assigned",         label: "Assigned" },
-    { value: "in_progress",      label: "In Progress" },
+    { value: "contacted",        label: "In Progress" },
     { value: "report_submitted", label: "Report Done" },
   ]
 
   const pending    = items.filter((i) => i.status === "assigned").length
-  const inProgress = items.filter((i) => i.status === "in_progress").length
+  const inProgress = items.filter((i) => ["contacted", "inspection_scheduled", "inspection_done"].includes(i.status)).length
 
   return (
     <div className="space-y-5">

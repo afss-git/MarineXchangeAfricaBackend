@@ -98,8 +98,10 @@ async def get_seller(seller_id: UUID, db: DbConn, current_user: AdminUser) -> di
             p.condition, p.availability_type, p.location_country,
             p.location_port, p.verification_cycle,
             p.created_at, p.updated_at,
+            p.description,
             c.name AS category_name,
             -- current assigned agent
+            va.id AS verification_assignment_id,
             COALESCE(ap.full_name, agu.email) AS verification_agent,
             agu.email AS agent_email,
             -- image count
