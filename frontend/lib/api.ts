@@ -2163,10 +2163,17 @@ export interface AdminProductDetail extends AdminProductListItem {
   description: string | null; location_port: string | null
   location_details: string | null; is_auction: boolean
   seller_phone: string | null; seller_country: string | null
+  verification_cycle: number
   images: ProductImage[]; attribute_values: ProductAttributeValue[]
+  contact: { contact_name: string | null; phone: string | null; email: string | null } | null
   admin_notes: string | null; rejection_reason: string | null
-  verification_report: string | null
   verification_assignment_id: string | null
+}
+
+export interface ProductActivityItem {
+  action: string; actor_name: string | null
+  resource_type: string; new_state: Record<string, unknown> | null
+  created_at: string | null
 }
 
 export interface AdminProductDecision {
@@ -2195,6 +2202,9 @@ export const marketplaceAdmin = {
 
   get: (id: string) =>
     request<AdminProductDetail>(`/marketplace/admin/products/${id}`),
+
+  getActivity: (id: string) =>
+    request<ProductActivityItem[]>(`/marketplace/admin/products/${id}/activity`),
 
   update: (id: string, data: {
     title?: string; description?: string | null; asking_price?: number

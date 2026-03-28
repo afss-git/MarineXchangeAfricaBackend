@@ -167,6 +167,46 @@ async def decide_product(
     return await admin_product_decision(db, product_id, payload, current_user)
 
 
+@router.get(
+    "/admin/products/{product_id}/activity",
+    summary="Product audit trail",
+    description="All audit log entries where resource_id = product_id. Returns up to 50 entries newest first.",
+)
+async def product_activity(
+    product_id: UUID,
+    db: DbConn,
+    current_user: dict = AdminOnly,
+) -> list[dict]:
+    rows = await db.fetch(
+        """
+        SELECT
+            al.action,
+            al.resource_type,
+            al.resource_id,
+            al.new_state,
+            al.created_at,
+            COALESCE(p.full_name, au.email, al.actor_id) AS actor_name
+        FROM audit.logs al
+        LEFT JOIN public.profiles p  ON p.id  = al.actor_id::uuid
+        LEFT JOIN auth.users     au  ON au.id = al.actor_id::uuid
+        WHERE al.resource_id = $1
+        ORDER BY al.created_at DESC
+        LIMIT 50
+        """,
+        str(product_id),
+    )
+    return [
+        {
+            "action":        r["action"],
+            "actor_name":    r["actor_name"],
+            "resource_type": r["resource_type"],
+            "new_state":     r["new_state"],
+            "created_at":    r["created_at"].isoformat() if r["created_at"] else None,
+        }
+        for r in rows
+    ]
+
+
 @router.post(
     "/admin/products/{product_id}/delist",
     response_model=ProductSubmitResponse,

@@ -7,12 +7,12 @@ import {
   Activity, Mail, Phone, MapPin, Building2, Calendar, AlertCircle,
   Loader2, RefreshCw, ExternalLink, UserX, UserCheck2,
   ChevronDown, ChevronUp, ImageIcon, FileText, CheckCircle2,
-  XCircle, Clock, Tag, Wrench, FileCheck,
+  Clock, Tag, Wrench, FileCheck,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import { adminSellers, admin, marketplaceAdmin, verificationAgent, type AdminSellerDetail, type AdminProductDetail, type VerificationAssignmentDetail, type VerificationEvidenceFile } from "@/lib/api"
+import { adminSellers, admin, marketplaceAdmin, verificationAgent, type AdminSellerDetail, type AdminProductDetail, type VerificationAssignmentDetail, type VerificationEvidenceFile, type ProductActivityItem } from "@/lib/api"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -230,31 +230,46 @@ function OverviewTab({ data }: { data: SellerDetail }) {
 const ASSIGN_STATUS_STEPS = [
   { key: "assigned",             label: "Assigned" },
   { key: "contacted",            label: "In Progress" },
-  { key: "inspection_scheduled", label: "Inspection Scheduled" },
-  { key: "inspection_done",      label: "Inspection Complete" },
+  { key: "inspection_scheduled", label: "Scheduled" },
+  { key: "inspection_done",      label: "Inspection Done" },
   { key: "report_submitted",     label: "Report Submitted" },
   { key: "completed",            label: "Completed" },
 ]
 
+function SectionHeader({ icon: Icon, title, count }: { icon: React.ElementType; title: string; count?: number }) {
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      <Icon className="w-4 h-4 text-text-secondary shrink-0" />
+      <p className="text-xs font-bold text-text-secondary uppercase tracking-wider">
+        {title}{count != null ? ` (${count})` : ""}
+      </p>
+    </div>
+  )
+}
+
 function ListingDetailPanel({ listing }: { listing: Listing }) {
   const [product, setProduct]         = useState<AdminProductDetail | null>(null)
   const [assignment, setAssignment]   = useState<VerificationAssignmentDetail | null>(null)
+  const [activity, setActivity]       = useState<ProductActivityItem[]>([])
   const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState<string | null>(null)
+  const [showActivity, setShowActivity] = useState(false)
 
   useEffect(() => {
     let mounted = true
     async function load() {
       try {
-        const [prod, asgn] = await Promise.all([
+        const [prod, asgn, act] = await Promise.all([
           marketplaceAdmin.get(listing.id),
           listing.verification_assignment_id
             ? verificationAgent.getAssignment(listing.verification_assignment_id)
             : Promise.resolve(null),
+          marketplaceAdmin.getActivity(listing.id),
         ])
         if (!mounted) return
         setProduct(prod)
         setAssignment(asgn)
+        setActivity(act)
       } catch (e: unknown) {
         if (mounted) setError((e as Error)?.message ?? "Failed to load listing details")
       } finally {
@@ -266,75 +281,101 @@ function ListingDetailPanel({ listing }: { listing: Listing }) {
   }, [listing.id, listing.verification_assignment_id])
 
   if (loading) return (
-    <div className="flex items-center justify-center py-8 gap-2 text-text-secondary text-sm">
+    <div className="flex items-center justify-center py-10 gap-2 text-text-secondary text-sm border-t border-border">
       <Loader2 className="w-4 h-4 animate-spin" /> Loading full details…
     </div>
   )
   if (error) return (
-    <div className="flex items-center gap-2 p-4 text-danger text-sm">
+    <div className="flex items-center gap-2 px-5 py-4 text-danger text-sm border-t border-border">
       <AlertCircle className="w-4 h-4 shrink-0" />{error}
     </div>
   )
   if (!product) return null
 
-  const report  = assignment?.report ?? null
+  const report         = assignment?.report ?? null
   const evidence: VerificationEvidenceFile[] = assignment?.evidence_files ?? []
   const evidenceImages = evidence.filter(e => e.file_type === "image")
   const evidenceDocs   = evidence.filter(e => e.file_type === "document")
-
-  // Find current step index for the timeline
   const currentStepIdx = assignment
     ? ASSIGN_STATUS_STEPS.findIndex(s => s.key === assignment.status)
     : -1
 
-  return (
-    <div className="border-t border-border bg-gray-50/30 divide-y divide-border">
+  const recBadge = report ? {
+    approve:              { label: "Recommend Approve",    cls: "bg-success/10 text-success border-success/20" },
+    reject:               { label: "Recommend Reject",     cls: "bg-danger/10 text-danger border-danger/20" },
+    request_corrections:  { label: "Request Corrections",  cls: "bg-warning/10 text-warning border-warning/20" },
+  }[report.recommendation] ?? null : null
 
-      {/* Description */}
+  return (
+    <div className="border-t border-border">
+
+      {/* ── 1. PRODUCT OVERVIEW ───────────────────────────────────────────── */}
+      <div className="px-5 py-5 bg-gray-50/40 border-b border-border">
+        <SectionHeader icon={Package} title="Product Details" />
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {[
+            { label: "Asking Price",      value: fmtMoney(product.asking_price, product.currency) },
+            { label: "Condition",         value: product.condition ? product.condition.charAt(0).toUpperCase() + product.condition.slice(1) : "—" },
+            { label: "Availability",      value: product.availability_type?.replace(/_/g, " ") ?? "—" },
+            { label: "Location",          value: [product.location_country, product.location_port].filter(Boolean).join(", ") || "—" },
+            { label: "Category",          value: product.category_name ?? "Uncategorized" },
+            { label: "Verification Cycle",value: `Cycle ${product.verification_cycle ?? 0}` },
+            { label: "Listed",            value: fmtDate(product.created_at) },
+            { label: "Last Updated",      value: fmtDate(product.updated_at) },
+            ...(product.location_details ? [{ label: "Location Details", value: product.location_details }] : []),
+            ...(product.is_auction       ? [{ label: "Type",             value: "Auction listing" }] : []),
+          ].map(({ label, value }) => (
+            <div key={label} className="bg-white rounded-lg border border-border px-3 py-2.5">
+              <p className="text-[11px] text-text-secondary mb-0.5">{label}</p>
+              <p className="text-sm font-medium text-text-primary capitalize">{value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── 2. DESCRIPTION ────────────────────────────────────────────────── */}
       {product.description && (
-        <div className="px-5 py-4">
-          <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">Description</p>
+        <div className="px-5 py-5 border-b border-border">
+          <SectionHeader icon={FileText} title="Description" />
           <p className="text-sm text-text-primary leading-relaxed whitespace-pre-line">{product.description}</p>
         </div>
       )}
 
-      {/* Product Images */}
-      {product.images.length > 0 && (
-        <div className="px-5 py-4">
-          <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-3">
-            <ImageIcon className="inline w-3.5 h-3.5 mr-1.5" />
-            Product Photos ({product.images.length})
-          </p>
+      {/* ── 3. PRODUCT PHOTOS ─────────────────────────────────────────────── */}
+      <div className="px-5 py-5 border-b border-border">
+        <SectionHeader icon={ImageIcon} title="Product Photos" count={product.images.length} />
+        {product.images.length === 0 ? (
+          <p className="text-sm text-text-secondary italic">No photos uploaded.</p>
+        ) : (
           <div className="flex gap-3 flex-wrap">
             {product.images.map((img) => (
               <a key={img.id} href={img.signed_url} target="_blank" rel="noopener noreferrer"
-                className="group relative w-28 h-28 rounded-xl border border-border overflow-hidden bg-gray-100 hover:ring-2 hover:ring-ocean/40 transition-all shrink-0">
+                className="group relative w-32 h-32 rounded-xl border border-border overflow-hidden bg-gray-100 hover:ring-2 hover:ring-ocean/40 transition-all shrink-0">
                 <img src={img.signed_url} alt="" className="w-full h-full object-cover" />
                 {img.is_primary && (
-                  <span className="absolute bottom-1 left-1 text-[10px] bg-ocean text-white px-1.5 py-0.5 rounded font-medium">Primary</span>
+                  <span className="absolute bottom-1.5 left-1.5 text-[10px] bg-ocean text-white px-1.5 py-0.5 rounded-md font-semibold">Primary</span>
                 )}
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                  <ExternalLink className="w-4 h-4 text-white drop-shadow" />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                  <ExternalLink className="w-5 h-5 text-white drop-shadow" />
                 </div>
               </a>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Specifications */}
+      {/* ── 4. TECHNICAL SPECIFICATIONS ───────────────────────────────────── */}
       {product.attribute_values.length > 0 && (
-        <div className="px-5 py-4">
-          <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-3">
-            <Wrench className="inline w-3.5 h-3.5 mr-1.5" />
-            Technical Specifications
-          </p>
+        <div className="px-5 py-5 border-b border-border">
+          <SectionHeader icon={Wrench} title="Technical Specifications" count={product.attribute_values.length} />
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
             {product.attribute_values.map((attr) => (
               <div key={attr.attribute_id} className="p-2.5 bg-white rounded-lg border border-border">
-                <p className="text-xs text-text-secondary mb-0.5">{attr.attribute_name}</p>
+                <p className="text-[11px] text-text-secondary mb-0.5">{attr.attribute_name}</p>
                 <p className="text-sm font-medium text-text-primary">
-                  {attr.value_text ?? (attr.value_numeric != null ? String(attr.value_numeric) : null) ?? (attr.value_boolean != null ? (attr.value_boolean ? "Yes" : "No") : "—")}
+                  {attr.value_text
+                    ?? (attr.value_numeric != null ? String(attr.value_numeric) : null)
+                    ?? (attr.value_boolean != null ? (attr.value_boolean ? "Yes" : "No") : "—")}
                 </p>
               </div>
             ))}
@@ -342,168 +383,294 @@ function ListingDetailPanel({ listing }: { listing: Listing }) {
         </div>
       )}
 
-      {/* Verification section */}
-      {assignment && (
-        <div className="px-5 py-4 space-y-5">
-          <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide">
-            <FileCheck className="inline w-3.5 h-3.5 mr-1.5" />
-            Verification
-          </p>
-
-          {/* Agent info + status timeline */}
-          <div className="bg-white rounded-xl border border-border overflow-hidden">
-            <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <UserCheck className="w-4 h-4 text-ocean" />
-                <p className="text-sm font-medium text-text-primary">
-                  {assignment.seller_company ? `${assignment.seller_company} · ` : ""}
-                  Agent assigned: {listing.verification_agent ?? "—"}
-                </p>
+      {/* ── 5. SELLER CONTACT ─────────────────────────────────────────────── */}
+      {(product.contact || product.seller_email || product.seller_phone) && (
+        <div className="px-5 py-5 border-b border-border">
+          <SectionHeader icon={Phone} title="Seller Contact" />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {product.contact?.contact_name && (
+              <div className="flex items-start gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-gray-50 border border-border flex items-center justify-center shrink-0">
+                  <User className="w-4 h-4 text-text-secondary" />
+                </div>
+                <div>
+                  <p className="text-[11px] text-text-secondary">Contact Name</p>
+                  <p className="text-sm font-medium text-text-primary">{product.contact.contact_name}</p>
+                </div>
               </div>
-              <p className="text-xs text-text-secondary">{fmtDateTime(assignment.assigned_at)}</p>
+            )}
+            {(product.contact?.phone || product.seller_phone) && (
+              <div className="flex items-start gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-gray-50 border border-border flex items-center justify-center shrink-0">
+                  <Phone className="w-4 h-4 text-text-secondary" />
+                </div>
+                <div>
+                  <p className="text-[11px] text-text-secondary">Phone</p>
+                  <p className="text-sm font-medium text-text-primary">{product.contact?.phone ?? product.seller_phone}</p>
+                </div>
+              </div>
+            )}
+            {(product.contact?.email || product.seller_email) && (
+              <div className="flex items-start gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-gray-50 border border-border flex items-center justify-center shrink-0">
+                  <Mail className="w-4 h-4 text-text-secondary" />
+                </div>
+                <div>
+                  <p className="text-[11px] text-text-secondary">Email</p>
+                  <p className="text-sm font-medium text-text-primary">{product.contact?.email ?? product.seller_email}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── 6. VERIFICATION JOURNEY ───────────────────────────────────────── */}
+      {assignment && (
+        <div className="px-5 py-5 border-b border-border space-y-4">
+          <SectionHeader icon={ShieldCheck} title="Verification Journey" />
+
+          {/* Agent card */}
+          <div className="bg-white rounded-xl border border-border overflow-hidden">
+            <div className="px-4 py-3 border-b border-border bg-gray-50/50 flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full bg-ocean/10 flex items-center justify-center">
+                  <UserCheck className="w-3.5 h-3.5 text-ocean" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-text-primary">{listing.verification_agent ?? "Agent"}</p>
+                  {listing.agent_email && <p className="text-[11px] text-text-secondary">{listing.agent_email}</p>}
+                </div>
+              </div>
+              <div className="text-right text-xs text-text-secondary">
+                <p>Assigned <strong>{fmtDateTime(assignment.assigned_at)}</strong></p>
+                {assignment.assigned_by_name && <p>by {assignment.assigned_by_name}</p>}
+              </div>
             </div>
-            {/* Step timeline */}
-            <div className="px-4 py-4">
-              <div className="flex items-center gap-0 overflow-x-auto">
+
+            {/* Status timeline */}
+            <div className="px-4 py-5 overflow-x-auto">
+              <div className="flex items-start min-w-max gap-0">
                 {ASSIGN_STATUS_STEPS.map((step, idx) => {
                   const done    = idx <= currentStepIdx
                   const current = idx === currentStepIdx
                   return (
-                    <div key={step.key} className="flex items-center min-w-0 shrink-0">
-                      <div className="flex flex-col items-center gap-1">
+                    <div key={step.key} className="flex items-center">
+                      <div className="flex flex-col items-center gap-1.5 w-[80px]">
                         <div className={cn(
-                          "w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors",
+                          "w-7 h-7 rounded-full border-2 flex items-center justify-center transition-colors",
                           done
-                            ? current
-                              ? "bg-ocean border-ocean"
-                              : "bg-success border-success"
+                            ? current ? "bg-ocean border-ocean shadow-sm shadow-ocean/30"
+                                      : "bg-success border-success"
                             : "bg-white border-gray-200"
                         )}>
                           {done
-                            ? <CheckCircle2 className="w-3.5 h-3.5 text-white" />
-                            : <div className="w-2 h-2 rounded-full bg-gray-200" />}
+                            ? <CheckCircle2 className="w-4 h-4 text-white" />
+                            : <div className="w-2.5 h-2.5 rounded-full bg-gray-200" />}
                         </div>
                         <p className={cn(
-                          "text-[10px] text-center leading-tight max-w-[60px]",
-                          done ? (current ? "text-ocean font-semibold" : "text-success font-medium") : "text-gray-400"
+                          "text-[10px] text-center leading-tight font-medium",
+                          done ? (current ? "text-ocean" : "text-success") : "text-gray-400"
                         )}>
                           {step.label}
                         </p>
                       </div>
                       {idx < ASSIGN_STATUS_STEPS.length - 1 && (
-                        <div className={cn("h-0.5 w-8 shrink-0 mx-0.5 -mt-5", idx < currentStepIdx ? "bg-success" : "bg-gray-200")} />
+                        <div className={cn(
+                          "h-0.5 w-8 shrink-0 -mt-5",
+                          idx < currentStepIdx ? "bg-success" : "bg-gray-200"
+                        )} />
                       )}
                     </div>
                   )
                 })}
               </div>
             </div>
+
+            {/* Agent notes + scheduled date */}
+            {(assignment.scheduled_date || assignment.contact_notes) && (
+              <div className="px-4 pb-4 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-border pt-3">
+                {assignment.scheduled_date && (
+                  <div>
+                    <p className="text-[11px] text-text-secondary mb-0.5">Scheduled Inspection Date</p>
+                    <p className="text-sm font-medium text-text-primary">{fmtDate(assignment.scheduled_date)}</p>
+                  </div>
+                )}
+                {assignment.contact_notes && (
+                  <div className={cn(assignment.scheduled_date ? "" : "sm:col-span-2")}>
+                    <p className="text-[11px] text-text-secondary mb-0.5">Agent Contact Notes</p>
+                    <p className="text-sm text-text-primary whitespace-pre-line">{assignment.contact_notes}</p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Verification Report */}
-          {report && (
+          {/* ── 7. VERIFICATION REPORT ──────────────────────────────────────── */}
+          {report ? (
             <div className="bg-white rounded-xl border border-border overflow-hidden">
-              <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-text-secondary" />
-                  <p className="text-sm font-semibold text-text-primary">Verification Report</p>
+              {/* Report header — recommendation is the headline */}
+              <div className={cn(
+                "px-5 py-4 border-b border-border flex items-center justify-between flex-wrap gap-3",
+                report.recommendation === "approve"             ? "bg-success/5" :
+                report.recommendation === "reject"              ? "bg-danger/5"  :
+                "bg-warning/5"
+              )}>
+                <div className="flex items-center gap-3">
+                  <FileCheck className="w-5 h-5 text-text-secondary" />
+                  <div>
+                    <p className="text-sm font-bold text-text-primary">Verification Report</p>
+                    <p className="text-xs text-text-secondary">Submitted {fmtDateTime(report.created_at)}</p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Badge className={cn("text-xs border", {
-                    "bg-success/10 text-success border-success/20": report.recommendation === "approve",
-                    "bg-danger/10 text-danger border-danger/20":    report.recommendation === "reject",
-                    "bg-warning/10 text-warning border-warning/20": report.recommendation === "request_corrections",
-                  })}>
-                    {report.recommendation === "approve" ? "Recommend Approve"
-                      : report.recommendation === "reject" ? "Recommend Reject"
-                      : "Request Corrections"}
+                {recBadge && (
+                  <Badge className={cn("text-sm border font-semibold px-3 py-1", recBadge.cls)}>
+                    {recBadge.label}
                   </Badge>
-                  <span className="text-xs text-text-secondary">{fmtDateTime(report.created_at)}</span>
-                </div>
-              </div>
-              <div className="px-4 py-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p className="text-xs text-text-secondary mb-1">Asset Condition</p>
-                  <p className="font-medium text-text-primary">{report.condition_confirmed ?? "—"}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-text-secondary mb-1">Price Assessment</p>
-                  <p className="font-medium text-text-primary">{report.price_assessment ?? "—"}</p>
-                </div>
-                <div className="sm:col-span-2">
-                  <p className="text-xs text-text-secondary mb-1">Agent Notes</p>
-                  <p className="text-text-primary whitespace-pre-line leading-relaxed">{report.notes}</p>
-                </div>
+                )}
               </div>
 
-              {/* Evidence Images */}
-              {evidenceImages.length > 0 && (
-                <div className="px-4 pb-4">
-                  <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-3">
-                    <ImageIcon className="inline w-3.5 h-3.5 mr-1.5" />
-                    Inspection Photos ({evidenceImages.length})
-                  </p>
-                  <div className="flex gap-3 flex-wrap">
-                    {evidenceImages.map((ev) => (
-                      <div key={ev.id} className="flex flex-col gap-1">
-                        <a href={ev.signed_url} target="_blank" rel="noopener noreferrer"
-                          className="group relative w-28 h-28 rounded-xl border border-border overflow-hidden bg-gray-100 hover:ring-2 hover:ring-ocean/40 transition-all">
-                          <img src={ev.signed_url} alt="" className="w-full h-full object-cover" />
-                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                            <ExternalLink className="w-4 h-4 text-white drop-shadow" />
+              {/* Report findings */}
+              <div className="px-5 py-4 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="p-3 bg-gray-50 rounded-lg border border-border">
+                    <p className="text-[11px] text-text-secondary mb-1">Asset Condition (as verified)</p>
+                    <p className="text-sm font-semibold text-text-primary">{report.condition_confirmed ?? "—"}</p>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-lg border border-border">
+                    <p className="text-[11px] text-text-secondary mb-1">Price Assessment</p>
+                    <p className="text-sm font-semibold text-text-primary">{report.price_assessment ?? "—"}</p>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide mb-2">Detailed Findings</p>
+                  <div className="p-4 bg-gray-50 rounded-lg border border-border">
+                    <p className="text-sm text-text-primary leading-relaxed whitespace-pre-line">{report.notes}</p>
+                  </div>
+                </div>
+
+                {/* ── 8. INSPECTION PHOTOS ──────────────────────────────────── */}
+                {evidenceImages.length > 0 && (
+                  <div>
+                    <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide mb-2">
+                      Inspection Photos ({evidenceImages.length})
+                    </p>
+                    <div className="flex gap-3 flex-wrap">
+                      {evidenceImages.map((ev) => (
+                        <div key={ev.id} className="flex flex-col gap-1">
+                          <a href={ev.signed_url} target="_blank" rel="noopener noreferrer"
+                            className="group relative w-28 h-28 rounded-xl border border-border overflow-hidden bg-gray-100 hover:ring-2 hover:ring-ocean/40 transition-all">
+                            <img src={ev.signed_url} alt="" className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                              <ExternalLink className="w-4 h-4 text-white drop-shadow" />
+                            </div>
+                          </a>
+                          {ev.description && (
+                            <p className="text-[10px] text-text-secondary max-w-[112px] truncate">{ev.description}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── 9. SUPPORTING DOCUMENTS ───────────────────────────────── */}
+                {evidenceDocs.length > 0 && (
+                  <div>
+                    <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide mb-2">
+                      Supporting Documents ({evidenceDocs.length})
+                    </p>
+                    <div className="space-y-2">
+                      {evidenceDocs.map((ev) => (
+                        <a key={ev.id} href={ev.signed_url} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-border hover:bg-white hover:border-ocean/30 hover:shadow-sm transition-all">
+                          <div className="w-9 h-9 rounded-lg bg-ocean/10 flex items-center justify-center shrink-0">
+                            <FileText className="w-4.5 h-4.5 text-ocean" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-ocean truncate">
+                              {ev.description || ev.storage_path.split("/").pop() || "Document"}
+                            </p>
+                            <p className="text-xs text-text-secondary">Uploaded {fmtDate(ev.created_at)}</p>
+                          </div>
+                          <div className="flex items-center gap-1 text-xs text-ocean font-medium shrink-0">
+                            <span>Open</span>
+                            <ExternalLink className="w-3.5 h-3.5" />
                           </div>
                         </a>
-                        {ev.description && <p className="text-[10px] text-text-secondary max-w-[112px] truncate">{ev.description}</p>}
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Evidence Documents */}
-              {evidenceDocs.length > 0 && (
-                <div className="px-4 pb-4">
-                  <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-3">
-                    <FileText className="inline w-3.5 h-3.5 mr-1.5" />
-                    Supporting Documents ({evidenceDocs.length})
-                  </p>
-                  <div className="space-y-2">
-                    {evidenceDocs.map((ev) => (
-                      <a key={ev.id} href={ev.signed_url} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-border hover:bg-gray-100 hover:border-gray-300 transition-colors">
-                        <div className="w-8 h-8 rounded-lg bg-ocean/10 flex items-center justify-center shrink-0">
-                          <FileText className="w-4 h-4 text-ocean" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-ocean truncate">
-                            {ev.description || ev.storage_path.split("/").pop() || "Document"}
-                          </p>
-                          <p className="text-xs text-text-secondary">{fmtDate(ev.created_at)}</p>
-                        </div>
-                        <ExternalLink className="w-3.5 h-3.5 text-text-secondary shrink-0" />
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
+                {evidenceImages.length === 0 && evidenceDocs.length === 0 && (
+                  <p className="text-xs text-text-secondary italic">No evidence files were attached to this report.</p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 p-4 bg-gray-50 rounded-xl border border-border text-sm text-text-secondary">
+              <Clock className="w-4 h-4 shrink-0" />
+              No report submitted yet. Assignment is in <strong className="text-text-primary ml-1 capitalize">{assignment.status.replace(/_/g, " ")}</strong> stage.
             </div>
           )}
         </div>
       )}
 
-      {/* Admin notes / rejection reason */}
+      {/* ── 10. ADMIN DECISION ────────────────────────────────────────────── */}
       {(product.admin_notes || product.rejection_reason) && (
-        <div className="px-5 py-4 space-y-3">
+        <div className="px-5 py-5 border-b border-border space-y-3">
+          <SectionHeader icon={ShieldCheck} title="Admin Decision" />
+          {product.rejection_reason && (
+            <div className="p-4 bg-danger/5 rounded-xl border border-danger/20">
+              <p className="text-xs font-semibold text-danger uppercase tracking-wide mb-1">Rejection Reason</p>
+              <p className="text-sm text-text-primary">{product.rejection_reason}</p>
+            </div>
+          )}
           {product.admin_notes && (
-            <div>
+            <div className="p-4 bg-gray-50 rounded-xl border border-border">
               <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-1">Admin Notes</p>
               <p className="text-sm text-text-primary">{product.admin_notes}</p>
             </div>
           )}
-          {product.rejection_reason && (
-            <div>
-              <p className="text-xs font-semibold text-danger uppercase tracking-wide mb-1">Rejection Reason</p>
-              <p className="text-sm text-danger">{product.rejection_reason}</p>
+        </div>
+      )}
+
+      {/* ── 11. ACTIVITY LOG ──────────────────────────────────────────────── */}
+      {activity.length > 0 && (
+        <div className="px-5 py-5">
+          <button
+            onClick={() => setShowActivity(v => !v)}
+            className="flex items-center gap-2 mb-3 w-full group"
+          >
+            <Activity className="w-4 h-4 text-text-secondary" />
+            <p className="text-xs font-bold text-text-secondary uppercase tracking-wider flex-1 text-left">
+              Activity Log ({activity.length} events)
+            </p>
+            {showActivity
+              ? <ChevronUp className="w-4 h-4 text-text-secondary group-hover:text-text-primary" />
+              : <ChevronDown className="w-4 h-4 text-text-secondary group-hover:text-text-primary" />}
+          </button>
+
+          {showActivity && (
+            <div className="bg-white rounded-xl border border-border overflow-hidden">
+              <div className="divide-y divide-border max-h-64 overflow-y-auto">
+                {activity.map((ev, i) => (
+                  <div key={i} className="flex items-start gap-3 px-4 py-3">
+                    <div className="w-1.5 h-1.5 rounded-full bg-ocean shrink-0 mt-1.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-text-primary">
+                        {ev.action.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                      </p>
+                      <p className="text-[11px] text-text-secondary">
+                        {ev.actor_name ? `by ${ev.actor_name}` : "system"}
+                      </p>
+                    </div>
+                    <p className="text-[11px] text-text-secondary shrink-0">{fmtDateTime(ev.created_at)}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
