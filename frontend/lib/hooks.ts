@@ -33,6 +33,7 @@ import {
   exchangeRates,
   dealAdmin,
   financeAdmin,
+  adminSellers,
 } from "./api"
 
 // ── Poll intervals ────────────────────────────────────────────────────────────
@@ -212,6 +213,10 @@ export function invalidateAdminUsers() {
     undefined,
     { revalidate: true }
   )
+}
+
+export function useAdminSellers(params?: Parameters<typeof adminSellers.list>[0]) {
+  return useSWR(["admin-sellers", params], () => adminSellers.list(params), { refreshInterval: 30000 })
 }
 
 // ── Admin KYC ─────────────────────────────────────────────────────────────────

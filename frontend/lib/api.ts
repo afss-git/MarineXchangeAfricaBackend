@@ -541,6 +541,12 @@ export const seller = {
 
   getVerificationStatus: (listingId: string) =>
     request<SellerVerificationStatus | null>(`/marketplace/listings/${listingId}/verification`),
+
+  uploadDocument: (listingId: string, formData: FormData) =>
+    upload<ProductDocument>(`/marketplace/listings/${listingId}/documents`, formData),
+
+  deleteDocument: (listingId: string, docId: string) =>
+    request<MessageResponse>(`/marketplace/listings/${listingId}/documents/${docId}`, { method: "DELETE" }),
 }
 
 // ── Seller dashboard types ────────────────────────────────────────────────────
@@ -2159,12 +2165,19 @@ export interface AdminProductListItem {
   submitted_at: string | null; created_at: string; updated_at: string
 }
 
+export interface ProductDocument {
+  id: string; storage_path: string; original_name: string | null
+  file_size_bytes: number | null; mime_type: string | null
+  description: string | null; signed_url: string; uploaded_at: string | null
+}
+
 export interface AdminProductDetail extends AdminProductListItem {
   description: string | null; location_port: string | null
   location_details: string | null; is_auction: boolean
   seller_phone: string | null; seller_country: string | null
   verification_cycle: number
   images: ProductImage[]; attribute_values: ProductAttributeValue[]
+  documents: ProductDocument[]
   contact: { contact_name: string | null; phone: string | null; email: string | null } | null
   admin_notes: string | null; rejection_reason: string | null
   verification_assignment_id: string | null

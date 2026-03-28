@@ -1,18 +1,25 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import {
   ArrowLeft, User, ShieldCheck, Handshake, Package, UserCheck,
   Activity, Mail, Phone, MapPin, Building2, Calendar, AlertCircle,
   Loader2, RefreshCw, ExternalLink, UserX, UserCheck2,
   ChevronDown, ChevronUp, ImageIcon, FileText, CheckCircle2,
-  Clock, Tag, Wrench, FileCheck,
+  Clock, Tag, Wrench, FileCheck, Download, X, ThumbsUp, ThumbsDown,
+  RotateCcw, Trash2, UserPlus,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import { adminSellers, admin, marketplaceAdmin, verificationAgent, type AdminSellerDetail, type AdminProductDetail, type VerificationAssignmentDetail, type VerificationEvidenceFile, type ProductActivityItem } from "@/lib/api"
+import { usePageLoader } from "@/components/page-loader"
+import {
+  adminSellers, admin, marketplaceAdmin, verificationAgent,
+  type AdminSellerDetail, type AdminProductDetail, type VerificationAssignmentDetail,
+  type VerificationEvidenceFile, type ProductActivityItem, type ProductDocument,
+  type AdminProductDecision,
+} from "@/lib/api"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -247,47 +254,191 @@ function SectionHeader({ icon: Icon, title, count }: { icon: React.ElementType; 
   )
 }
 
-function ListingDetailPanel({ listing }: { listing: Listing }) {
+// ── Image lightbox ────────────────────────────────────────────────────────────
+
+function ImageLightbox({ src, onClose }: { src: string; onClose: () => void }) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose() }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [onClose])
+  return (
+    <div
+      className="fixed inset-0 z-[9998] flex items-center justify-center"
+      style={{ backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", backgroundColor: "rgba(0,0,0,0.75)" }}
+      onClick={onClose}
+    >
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+      >
+        <X className="w-5 h-5" />
+      </button>
+      <img
+        src={src}
+        alt=""
+        className="max-w-[90vw] max-h-[90vh] object-contain rounded-xl shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  )
+}
+
+// ── Admin action modal ────────────────────────────────────────────────────────
+
+type ActionType = "approve" | "reject" | "request_corrections" | "delist" | "assign_agent"
+
+function AdminActionModal({
+  action, productId, onDone, onClose,
+}: {
+  action: ActionType; productId: string
+  onDone: () => void; onClose: () => void
+}) {
+  const [note, setNote]         = useState("")
+  const [agentId, setAgentId]   = useState("")
+  const [agents, setAgents]     = useState<{ id: string; full_name: string | null; email: string }[]>([])
+  const [submitting, setSubmitting] = useState(false)
+  const [err, setErr]           = useState<string | null>(null)
+
+  useEffect(() => {
+    if (action === "assign_agent") {
+      admin.listUsers({ role: "verification_agent", page_size: 100 })
+        .then(r => setAgents((r.items ?? []) as { id: string; full_name: string | null; email: string }[]))
+        .catch(() => {})
+    }
+  }, [action])
+
+  const LABELS: Record<ActionType, { title: string; btn: string; btnCls: string }> = {
+    approve:             { title: "Approve Listing",         btn: "Approve",           btnCls: "bg-success text-white hover:bg-success/90" },
+    reject:              { title: "Reject Listing",          btn: "Reject",            btnCls: "bg-danger text-white hover:bg-danger/90" },
+    request_corrections: { title: "Request Corrections",     btn: "Send Back",         btnCls: "bg-warning text-white hover:bg-warning/90" },
+    delist:              { title: "Delist Listing",          btn: "Delist",            btnCls: "bg-danger text-white hover:bg-danger/90" },
+    assign_agent:        { title: "Assign Verification Agent", btn: "Assign Agent",    btnCls: "bg-ocean text-white hover:bg-ocean/90" },
+  }
+  const cfg = LABELS[action]
+
+  async function handleSubmit() {
+    setSubmitting(true); setErr(null)
+    try {
+      if (action === "assign_agent") {
+        if (!agentId) { setErr("Please select an agent."); setSubmitting(false); return }
+        await marketplaceAdmin.assignAgent(productId, agentId)
+      } else if (action === "delist") {
+        await marketplaceAdmin.delist(productId, note || undefined)
+      } else {
+        const payload: AdminProductDecision = { decision: action }
+        if (note) action === "reject" || action === "request_corrections"
+          ? (payload.reason = note)
+          : (payload.admin_notes = note)
+        await marketplaceAdmin.decide(productId, payload)
+      }
+      onDone()
+    } catch (e: unknown) {
+      setErr((e as Error)?.message ?? "Action failed. Please try again.")
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[9997] flex items-center justify-center p-4"
+      style={{ backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)", backgroundColor: "rgba(15,42,68,0.5)" }}
+    >
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+          <p className="font-semibold text-text-primary">{cfg.title}</p>
+          <button onClick={onClose} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center">
+            <X className="w-4 h-4 text-text-secondary" />
+          </button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          {action === "assign_agent" ? (
+            <div>
+              <label className="block text-xs font-semibold text-text-secondary mb-1.5">Select Agent</label>
+              <select
+                value={agentId}
+                onChange={e => setAgentId(e.target.value)}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-ocean/30"
+              >
+                <option value="">— Choose agent —</option>
+                {agents.map(a => (
+                  <option key={a.id} value={a.id}>{a.full_name || a.email}</option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-semibold text-text-secondary mb-1.5">
+                {action === "reject" || action === "request_corrections" ? "Reason / Notes" : "Admin Notes (optional)"}
+              </label>
+              <textarea
+                value={note}
+                onChange={e => setNote(e.target.value)}
+                rows={3}
+                placeholder={action === "approve" ? "Optional internal notes…" : "Provide a reason for the seller…"}
+                className="w-full border border-border rounded-lg px-3 py-2.5 text-sm text-text-primary bg-white resize-none focus:outline-none focus:ring-2 focus:ring-ocean/30"
+              />
+            </div>
+          )}
+          {err && (
+            <div className="flex items-center gap-2 text-danger text-sm p-3 bg-danger/5 rounded-lg border border-danger/20">
+              <AlertCircle className="w-4 h-4 shrink-0" />{err}
+            </div>
+          )}
+        </div>
+        <div className="px-6 pb-5 flex gap-3 justify-end">
+          <Button variant="outline" size="sm" onClick={onClose} disabled={submitting}>Cancel</Button>
+          <Button
+            size="sm"
+            className={cn(cfg.btnCls)}
+            onClick={handleSubmit}
+            disabled={submitting}
+          >
+            {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+            {cfg.btn}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ListingDetailPanel({ listing, onActionDone }: { listing: Listing; onActionDone: () => void }) {
+  const { show: showLoader, hide: hideLoader } = usePageLoader()
   const [product, setProduct]         = useState<AdminProductDetail | null>(null)
   const [assignment, setAssignment]   = useState<VerificationAssignmentDetail | null>(null)
   const [activity, setActivity]       = useState<ProductActivityItem[]>([])
-  const [loading, setLoading]         = useState(true)
-  const [error, setError]             = useState<string | null>(null)
+  const [loadErr, setLoadErr]         = useState<string | null>(null)
   const [showActivity, setShowActivity] = useState(false)
+  const [lightbox, setLightbox]       = useState<string | null>(null)
+  const [activeAction, setActiveAction] = useState<ActionType | null>(null)
 
-  useEffect(() => {
-    let mounted = true
-    async function load() {
-      try {
-        const [prod, asgn, act] = await Promise.all([
-          marketplaceAdmin.get(listing.id),
-          listing.verification_assignment_id
-            ? verificationAgent.getAssignment(listing.verification_assignment_id)
-            : Promise.resolve(null),
-          marketplaceAdmin.getActivity(listing.id),
-        ])
-        if (!mounted) return
-        setProduct(prod)
-        setAssignment(asgn)
-        setActivity(act)
-      } catch (e: unknown) {
-        if (mounted) setError((e as Error)?.message ?? "Failed to load listing details")
-      } finally {
-        if (mounted) setLoading(false)
-      }
+  const load = useCallback(async () => {
+    showLoader()
+    setLoadErr(null)
+    try {
+      const [prod, asgn, act] = await Promise.all([
+        marketplaceAdmin.get(listing.id),
+        listing.verification_assignment_id
+          ? verificationAgent.getAssignment(listing.verification_assignment_id)
+          : Promise.resolve(null),
+        marketplaceAdmin.getActivity(listing.id),
+      ])
+      setProduct(prod)
+      setAssignment(asgn)
+      setActivity(act)
+    } catch (e: unknown) {
+      setLoadErr((e as Error)?.message ?? "Failed to load listing details")
+    } finally {
+      hideLoader()
     }
-    load()
-    return () => { mounted = false }
-  }, [listing.id, listing.verification_assignment_id])
+  }, [listing.id, listing.verification_assignment_id, showLoader, hideLoader])
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-10 gap-2 text-text-secondary text-sm border-t border-border">
-      <Loader2 className="w-4 h-4 animate-spin" /> Loading full details…
-    </div>
-  )
-  if (error) return (
+  useEffect(() => { load() }, [load])
+
+  if (loadErr) return (
     <div className="flex items-center gap-2 px-5 py-4 text-danger text-sm border-t border-border">
-      <AlertCircle className="w-4 h-4 shrink-0" />{error}
+      <AlertCircle className="w-4 h-4 shrink-0" />{loadErr}
     </div>
   )
   if (!product) return null
@@ -296,6 +447,7 @@ function ListingDetailPanel({ listing }: { listing: Listing }) {
   const evidence: VerificationEvidenceFile[] = assignment?.evidence_files ?? []
   const evidenceImages = evidence.filter(e => e.file_type === "image")
   const evidenceDocs   = evidence.filter(e => e.file_type === "document")
+  const sellerDocs: ProductDocument[] = product.documents ?? []
   const currentStepIdx = assignment
     ? ASSIGN_STATUS_STEPS.findIndex(s => s.key === assignment.status)
     : -1
@@ -306,8 +458,55 @@ function ListingDetailPanel({ listing }: { listing: Listing }) {
     request_corrections:  { label: "Request Corrections",  cls: "bg-warning/10 text-warning border-warning/20" },
   }[report.recommendation] ?? null : null
 
+  // Which admin actions are available for this status
+  const canApproveReject    = product.status === "pending_approval"
+  const canAssignAgent      = ["pending_verification", "pending_reverification"].includes(product.status)
+  const canDelist           = ["active", "under_offer"].includes(product.status)
+  const hasActions          = canApproveReject || canAssignAgent || canDelist
+
   return (
     <div className="border-t border-border">
+
+      {/* Lightbox */}
+      {lightbox && <ImageLightbox src={lightbox} onClose={() => setLightbox(null)} />}
+
+      {/* Action modal */}
+      {activeAction && (
+        <AdminActionModal
+          action={activeAction}
+          productId={product.id}
+          onClose={() => setActiveAction(null)}
+          onDone={() => { setActiveAction(null); onActionDone() }}
+        />
+      )}
+
+      {/* ── ADMIN CONTROLS ────────────────────────────────────────────────── */}
+      {hasActions && (
+        <div className="px-5 py-4 bg-navy/5 border-b border-border flex items-center gap-3 flex-wrap">
+          <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider mr-1">Admin Actions:</p>
+          {canApproveReject && <>
+            <Button size="sm" className="bg-success text-white hover:bg-success/90 gap-1.5" onClick={() => setActiveAction("approve")}>
+              <ThumbsUp className="w-3.5 h-3.5" /> Approve
+            </Button>
+            <Button size="sm" className="bg-danger text-white hover:bg-danger/90 gap-1.5" onClick={() => setActiveAction("reject")}>
+              <ThumbsDown className="w-3.5 h-3.5" /> Reject
+            </Button>
+            <Button size="sm" className="bg-warning text-white hover:bg-warning/90 gap-1.5" onClick={() => setActiveAction("request_corrections")}>
+              <RotateCcw className="w-3.5 h-3.5" /> Request Corrections
+            </Button>
+          </>}
+          {canAssignAgent && (
+            <Button size="sm" className="bg-ocean text-white hover:bg-ocean/90 gap-1.5" onClick={() => setActiveAction("assign_agent")}>
+              <UserPlus className="w-3.5 h-3.5" /> Assign Agent
+            </Button>
+          )}
+          {canDelist && (
+            <Button size="sm" variant="outline" className="border-danger text-danger hover:bg-danger/5 gap-1.5" onClick={() => setActiveAction("delist")}>
+              <Trash2 className="w-3.5 h-3.5" /> Delist
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* ── 1. PRODUCT OVERVIEW ───────────────────────────────────────────── */}
       <div className="px-5 py-5 bg-gray-50/40 border-b border-border">
@@ -341,7 +540,7 @@ function ListingDetailPanel({ listing }: { listing: Listing }) {
         </div>
       )}
 
-      {/* ── 3. PRODUCT PHOTOS ─────────────────────────────────────────────── */}
+      {/* ── 3. PRODUCT PHOTOS (seller uploaded) ───────────────────────────── */}
       <div className="px-5 py-5 border-b border-border">
         <SectionHeader icon={ImageIcon} title="Product Photos" count={product.images.length} />
         {product.images.length === 0 ? (
@@ -349,14 +548,44 @@ function ListingDetailPanel({ listing }: { listing: Listing }) {
         ) : (
           <div className="flex gap-3 flex-wrap">
             {product.images.map((img) => (
-              <a key={img.id} href={img.signed_url} target="_blank" rel="noopener noreferrer"
+              <button key={img.id} onClick={() => setLightbox(img.signed_url)}
                 className="group relative w-32 h-32 rounded-xl border border-border overflow-hidden bg-gray-100 hover:ring-2 hover:ring-ocean/40 transition-all shrink-0">
                 <img src={img.signed_url} alt="" className="w-full h-full object-cover" />
                 {img.is_primary && (
                   <span className="absolute bottom-1.5 left-1.5 text-[10px] bg-ocean text-white px-1.5 py-0.5 rounded-md font-semibold">Primary</span>
                 )}
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                  <ExternalLink className="w-5 h-5 text-white drop-shadow" />
+                  <ImageIcon className="w-5 h-5 text-white drop-shadow" />
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── 4. SELLER DOCUMENTS ───────────────────────────────────────────── */}
+      <div className="px-5 py-5 border-b border-border">
+        <SectionHeader icon={FileText} title="Seller Documents" count={sellerDocs.length} />
+        {sellerDocs.length === 0 ? (
+          <p className="text-sm text-text-secondary italic">No documents uploaded by seller.</p>
+        ) : (
+          <div className="space-y-2">
+            {sellerDocs.map((doc) => (
+              <a key={doc.id} href={doc.signed_url} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-border hover:bg-white hover:border-ocean/30 hover:shadow-sm transition-all">
+                <div className="w-9 h-9 rounded-lg bg-ocean/10 flex items-center justify-center shrink-0">
+                  <FileText className="w-4 h-4 text-ocean" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-ocean truncate">{doc.original_name || doc.storage_path.split("/").pop() || "Document"}</p>
+                  <p className="text-xs text-text-secondary">
+                    {doc.mime_type?.toUpperCase().replace("APPLICATION/", "").replace("VND.OPENXMLFORMATS-OFFICEDOCUMENT.WORDPROCESSINGML.", "") ?? "File"}
+                    {doc.file_size_bytes ? ` · ${(doc.file_size_bytes / 1024).toFixed(0)} KB` : ""}
+                    {" · Uploaded "}{fmtDate(doc.uploaded_at)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 text-xs text-ocean font-medium shrink-0">
+                  <Download className="w-3.5 h-3.5" />
                 </div>
               </a>
             ))}
@@ -364,7 +593,7 @@ function ListingDetailPanel({ listing }: { listing: Listing }) {
         )}
       </div>
 
-      {/* ── 4. TECHNICAL SPECIFICATIONS ───────────────────────────────────── */}
+      {/* ── 5. TECHNICAL SPECIFICATIONS ───────────────────────────────────── */}
       {product.attribute_values.length > 0 && (
         <div className="px-5 py-5 border-b border-border">
           <SectionHeader icon={Wrench} title="Technical Specifications" count={product.attribute_values.length} />
@@ -383,7 +612,7 @@ function ListingDetailPanel({ listing }: { listing: Listing }) {
         </div>
       )}
 
-      {/* ── 5. SELLER CONTACT ─────────────────────────────────────────────── */}
+      {/* ── 6. SELLER CONTACT ─────────────────────────────────────────────── */}
       {(product.contact || product.seller_email || product.seller_phone) && (
         <div className="px-5 py-5 border-b border-border">
           <SectionHeader icon={Phone} title="Seller Contact" />
@@ -425,12 +654,11 @@ function ListingDetailPanel({ listing }: { listing: Listing }) {
         </div>
       )}
 
-      {/* ── 6. VERIFICATION JOURNEY ───────────────────────────────────────── */}
+      {/* ── 7. VERIFICATION JOURNEY ───────────────────────────────────────── */}
       {assignment && (
         <div className="px-5 py-5 border-b border-border space-y-4">
           <SectionHeader icon={ShieldCheck} title="Verification Journey" />
 
-          {/* Agent card */}
           <div className="bg-white rounded-xl border border-border overflow-hidden">
             <div className="px-4 py-3 border-b border-border bg-gray-50/50 flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
@@ -448,7 +676,6 @@ function ListingDetailPanel({ listing }: { listing: Listing }) {
               </div>
             </div>
 
-            {/* Status timeline */}
             <div className="px-4 py-5 overflow-x-auto">
               <div className="flex items-start min-w-max gap-0">
                 {ASSIGN_STATUS_STEPS.map((step, idx) => {
@@ -487,7 +714,6 @@ function ListingDetailPanel({ listing }: { listing: Listing }) {
               </div>
             </div>
 
-            {/* Agent notes + scheduled date */}
             {(assignment.scheduled_date || assignment.contact_notes) && (
               <div className="px-4 pb-4 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-border pt-3">
                 {assignment.scheduled_date && (
@@ -506,10 +732,9 @@ function ListingDetailPanel({ listing }: { listing: Listing }) {
             )}
           </div>
 
-          {/* ── 7. VERIFICATION REPORT ──────────────────────────────────────── */}
+          {/* ── 8. VERIFICATION REPORT ──────────────────────────────────────── */}
           {report ? (
             <div className="bg-white rounded-xl border border-border overflow-hidden">
-              {/* Report header — recommendation is the headline */}
               <div className={cn(
                 "px-5 py-4 border-b border-border flex items-center justify-between flex-wrap gap-3",
                 report.recommendation === "approve"             ? "bg-success/5" :
@@ -530,7 +755,6 @@ function ListingDetailPanel({ listing }: { listing: Listing }) {
                 )}
               </div>
 
-              {/* Report findings */}
               <div className="px-5 py-4 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="p-3 bg-gray-50 rounded-lg border border-border">
@@ -550,7 +774,7 @@ function ListingDetailPanel({ listing }: { listing: Listing }) {
                   </div>
                 </div>
 
-                {/* ── 8. INSPECTION PHOTOS ──────────────────────────────────── */}
+                {/* ── 9. INSPECTION PHOTOS (agent uploaded) ─────────────────── */}
                 {evidenceImages.length > 0 && (
                   <div>
                     <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide mb-2">
@@ -559,13 +783,13 @@ function ListingDetailPanel({ listing }: { listing: Listing }) {
                     <div className="flex gap-3 flex-wrap">
                       {evidenceImages.map((ev) => (
                         <div key={ev.id} className="flex flex-col gap-1">
-                          <a href={ev.signed_url} target="_blank" rel="noopener noreferrer"
+                          <button onClick={() => setLightbox(ev.signed_url)}
                             className="group relative w-28 h-28 rounded-xl border border-border overflow-hidden bg-gray-100 hover:ring-2 hover:ring-ocean/40 transition-all">
                             <img src={ev.signed_url} alt="" className="w-full h-full object-cover" />
                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                              <ExternalLink className="w-4 h-4 text-white drop-shadow" />
+                              <ImageIcon className="w-4 h-4 text-white drop-shadow" />
                             </div>
-                          </a>
+                          </button>
                           {ev.description && (
                             <p className="text-[10px] text-text-secondary max-w-[112px] truncate">{ev.description}</p>
                           )}
@@ -575,18 +799,18 @@ function ListingDetailPanel({ listing }: { listing: Listing }) {
                   </div>
                 )}
 
-                {/* ── 9. SUPPORTING DOCUMENTS ───────────────────────────────── */}
+                {/* ── 10. AGENT SUPPORTING DOCS ─────────────────────────────── */}
                 {evidenceDocs.length > 0 && (
                   <div>
                     <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide mb-2">
-                      Supporting Documents ({evidenceDocs.length})
+                      Agent Supporting Documents ({evidenceDocs.length})
                     </p>
                     <div className="space-y-2">
                       {evidenceDocs.map((ev) => (
                         <a key={ev.id} href={ev.signed_url} target="_blank" rel="noopener noreferrer"
                           className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-border hover:bg-white hover:border-ocean/30 hover:shadow-sm transition-all">
                           <div className="w-9 h-9 rounded-lg bg-ocean/10 flex items-center justify-center shrink-0">
-                            <FileText className="w-4.5 h-4.5 text-ocean" />
+                            <FileText className="w-4 h-4 text-ocean" />
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-semibold text-ocean truncate">
@@ -595,8 +819,7 @@ function ListingDetailPanel({ listing }: { listing: Listing }) {
                             <p className="text-xs text-text-secondary">Uploaded {fmtDate(ev.created_at)}</p>
                           </div>
                           <div className="flex items-center gap-1 text-xs text-ocean font-medium shrink-0">
-                            <span>Open</span>
-                            <ExternalLink className="w-3.5 h-3.5" />
+                            <Download className="w-3.5 h-3.5" />
                           </div>
                         </a>
                       ))}
@@ -618,7 +841,7 @@ function ListingDetailPanel({ listing }: { listing: Listing }) {
         </div>
       )}
 
-      {/* ── 10. ADMIN DECISION ────────────────────────────────────────────── */}
+      {/* ── 11. ADMIN DECISION ────────────────────────────────────────────── */}
       {(product.admin_notes || product.rejection_reason) && (
         <div className="px-5 py-5 border-b border-border space-y-3">
           <SectionHeader icon={ShieldCheck} title="Admin Decision" />
@@ -637,7 +860,7 @@ function ListingDetailPanel({ listing }: { listing: Listing }) {
         </div>
       )}
 
-      {/* ── 11. ACTIVITY LOG ──────────────────────────────────────────────── */}
+      {/* ── 12. ACTIVITY LOG ──────────────────────────────────────────────── */}
       {activity.length > 0 && (
         <div className="px-5 py-5">
           <button
@@ -681,7 +904,7 @@ function ListingDetailPanel({ listing }: { listing: Listing }) {
 
 // ── Listings tab ──────────────────────────────────────────────────────────────
 
-function ListingsTab({ listings }: { listings: Listing[] }) {
+function ListingsTab({ listings, onRefresh }: { listings: Listing[]; onRefresh: () => void }) {
   const [statusFilter, setStatusFilter] = useState("")
   const [expanded, setExpanded]         = useState<string | null>(null)
 
@@ -786,7 +1009,7 @@ function ListingsTab({ listings }: { listings: Listing[] }) {
               </button>
 
               {/* Expandable detail */}
-              {isOpen && <ListingDetailPanel listing={l} />}
+              {isOpen && <ListingDetailPanel listing={l} onActionDone={() => { setExpanded(null); onRefresh() }} />}
             </div>
           )
         })}
@@ -1082,7 +1305,7 @@ export default function SellerDetailPage() {
       </div>
 
       {activeTab === "overview"  && <OverviewTab data={data} />}
-      {activeTab === "listings"  && <ListingsTab listings={data.listings} />}
+      {activeTab === "listings"  && <ListingsTab listings={data.listings} onRefresh={load} />}
       {activeTab === "deals"     && <DealsTab deals={data.deals} />}
       {activeTab === "agents"    && <AgentsTab agents={data.agents} />}
       {activeTab === "activity"  && <ActivityTab activity={data.activity} />}

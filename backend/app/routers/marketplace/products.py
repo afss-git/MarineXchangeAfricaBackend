@@ -32,6 +32,7 @@ from app.services.marketplace_service import (
     create_product_draft,
     delete_product_draft,
     delete_product_image,
+    delete_product_document,
     get_product_detail,
     get_product_verification_status,
     list_seller_products,
@@ -40,6 +41,7 @@ from app.services.marketplace_service import (
     submit_product_for_verification,
     update_product_draft,
     upload_product_image,
+    upload_product_document,
 )
 
 router = APIRouter(tags=["Marketplace — Seller Listings"])
@@ -238,3 +240,31 @@ async def set_image_primary(
 ):
     await set_primary_image(db, product_id, image_id, current_user)
     return MessageResponse(message="Primary image updated.")
+
+
+@router.post(
+    "/listings/{product_id}/documents",
+    summary="Upload a listing document",
+    description="Seller uploads a PDF, Word doc, or image as a supporting document. Only allowed for draft or pending_reverification listings.",
+)
+async def upload_listing_document(
+    product_id: UUID,
+    db: DbConn,
+    current_user: dict = SellerUser,
+    file: UploadFile = File(...),
+):
+    return await upload_product_document(db, product_id, file, current_user)
+
+
+@router.delete(
+    "/listings/{product_id}/documents/{doc_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a listing document",
+)
+async def delete_listing_document(
+    product_id: UUID,
+    doc_id: UUID,
+    db: DbConn,
+    current_user: dict = SellerUser,
+):
+    await delete_product_document(db, product_id, doc_id, current_user)

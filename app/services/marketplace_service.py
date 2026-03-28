@@ -747,6 +747,31 @@ async def get_product_detail(
     else:
         result["contact"] = None
 
+    # Seller-uploaded documents
+    doc_rows = await db.fetch(
+        """
+        SELECT id, storage_path, original_name, file_size_bytes, mime_type, description, uploaded_at
+        FROM marketplace.product_documents
+        WHERE product_id = $1
+        ORDER BY uploaded_at ASC
+        """,
+        product_id,
+    )
+    docs_with_urls = []
+    for doc in doc_rows:
+        signed_url = await _generate_signed_url(doc["storage_path"])
+        docs_with_urls.append({
+            "id": str(doc["id"]),
+            "storage_path": doc["storage_path"],
+            "original_name": doc["original_name"],
+            "file_size_bytes": doc["file_size_bytes"],
+            "mime_type": doc["mime_type"],
+            "description": doc["description"],
+            "signed_url": signed_url,
+            "uploaded_at": doc["uploaded_at"].isoformat() if doc["uploaded_at"] else None,
+        })
+    result["documents"] = docs_with_urls
+
     return result
 
 
@@ -1156,6 +1181,139 @@ async def delete_product_image(
             """,
             product_id,
         )
+
+
+ALLOWED_DOC_MIME_TYPES = frozenset({
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/plain",
+    "image/jpeg", "image/png", "image/webp",
+})
+DOC_MIME_TO_EXT = {
+    "application/pdf": "pdf",
+    "application/msword": "doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "text/plain": "txt",
+    "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
+}
+MAX_PRODUCT_DOCS = 10
+MAX_DOC_SIZE_MB = 20
+
+
+async def upload_product_document(
+    db: asyncpg.Connection,
+    product_id: uuid.UUID,
+    file: UploadFile,
+    actor: dict,
+) -> dict:
+    """Uploads a seller document (PDF, Word, image) to Supabase Storage."""
+    seller_id = uuid.UUID(str(actor["id"]))
+    roles = actor.get("roles", [])
+
+    if "seller" in roles and "admin" not in roles and "verification_agent" not in roles:
+        product = await _get_product_for_seller(db, product_id, seller_id)
+        if product["status"] not in {"draft", "pending_reverification"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Documents can only be uploaded to draft or pending_reverification listings.",
+            )
+
+    current_count = await db.fetchval(
+        "SELECT COUNT(*) FROM marketplace.product_documents WHERE product_id = $1",
+        product_id,
+    )
+    if current_count >= MAX_PRODUCT_DOCS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Maximum of {MAX_PRODUCT_DOCS} documents per listing.",
+        )
+
+    mime_type = file.content_type or ""
+    if mime_type not in ALLOWED_DOC_MIME_TYPES and file.filename:
+        guessed, _ = mimetypes.guess_type(file.filename)
+        mime_type = guessed or mime_type
+
+    if mime_type not in ALLOWED_DOC_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"Unsupported file type '{mime_type}'. Allowed: PDF, Word (.doc/.docx), images.",
+        )
+
+    file_bytes = await file.read()
+    max_bytes = MAX_DOC_SIZE_MB * 1024 * 1024
+    if len(file_bytes) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Document exceeds maximum size of {MAX_DOC_SIZE_MB} MB.",
+        )
+
+    doc_id = uuid.uuid4()
+    ext = DOC_MIME_TO_EXT.get(mime_type, "bin")
+    storage_path = f"products/{product_id}/documents/{doc_id}.{ext}"
+
+    try:
+        supabase = await get_supabase_admin_client()
+        await supabase.storage.from_(STORAGE_BUCKET).upload(
+            storage_path,
+            file_bytes,
+            {"content-type": mime_type},
+        )
+    except Exception as exc:
+        logger.error("Document upload failed for %s: %s", storage_path, exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Document upload failed. Please try again.",
+        )
+
+    row = await db.fetchrow(
+        """
+        INSERT INTO marketplace.product_documents
+            (id, product_id, storage_path, original_name, file_size_bytes, mime_type, uploaded_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING *
+        """,
+        doc_id, product_id, storage_path,
+        file.filename, len(file_bytes), mime_type,
+        uuid.UUID(str(actor["id"])),
+    )
+
+    signed_url = await _generate_signed_url(storage_path)
+    result = dict(row)
+    result["id"] = str(doc_id)
+    result["signed_url"] = signed_url
+    result["uploaded_at"] = row["uploaded_at"].isoformat() if row["uploaded_at"] else None
+    return result
+
+
+async def delete_product_document(
+    db: asyncpg.Connection,
+    product_id: uuid.UUID,
+    doc_id: uuid.UUID,
+    actor: dict,
+) -> None:
+    """Deletes a seller document from storage and DB."""
+    seller_id = uuid.UUID(str(actor["id"]))
+    roles = actor.get("roles", [])
+
+    doc = await db.fetchrow(
+        "SELECT id, storage_path, uploaded_by FROM marketplace.product_documents WHERE id = $1 AND product_id = $2",
+        doc_id, product_id,
+    )
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+
+    if "admin" not in roles and str(doc["uploaded_by"]) != str(seller_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your document.")
+
+    storage_path = doc["storage_path"]
+    await db.execute("DELETE FROM marketplace.product_documents WHERE id = $1", doc_id)
+
+    try:
+        supabase = await get_supabase_admin_client()
+        await supabase.storage.from_(STORAGE_BUCKET).remove([storage_path])
+    except Exception as exc:
+        logger.warning("Storage deletion failed for %s: %s", storage_path, exc)
 
 
 async def upload_verification_evidence_file(

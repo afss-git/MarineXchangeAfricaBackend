@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import { useAdminUsers } from "@/lib/hooks"
+import { useAdminSellers } from "@/lib/hooks"
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
@@ -38,8 +38,7 @@ export default function AdminSellersPage() {
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 20
 
-  const { data, isLoading, error: swrError, mutate } = useAdminUsers({
-    role: "seller",
+  const { data, isLoading, error: swrError, mutate } = useAdminSellers({
     page,
     page_size: PAGE_SIZE,
     search: search || undefined,

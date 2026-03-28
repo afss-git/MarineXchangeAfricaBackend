@@ -293,7 +293,18 @@ export default function NewListingPage() {
         }
       }
 
-      // Step 3 — publish if requested
+      // Step 3 — upload documents
+      for (let i = 0; i < docs.length; i++) {
+        const fd = new FormData()
+        fd.append("file", docs[i].file)
+        try {
+          await seller.uploadDocument(listing.id, fd)
+        } catch {
+          // non-fatal: continue even if a doc fails
+        }
+      }
+
+      // Step 4 — publish if requested
       if (publish) {
         await seller.submitListing(listing.id)
       }
