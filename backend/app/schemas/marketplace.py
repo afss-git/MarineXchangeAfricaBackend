@@ -162,8 +162,8 @@ class CreateAttributeRequest(BaseModel):
 class ProductContactInput(BaseModel):
     model_config = {"extra": "forbid"}
 
-    contact_name:   str       = Field(min_length=2, max_length=100)
-    phone:          str       = Field(min_length=7, max_length=30)
+    contact_name:   str            = Field(min_length=2, max_length=100)
+    phone:          str | None     = Field(default=None, max_length=30)
     email:          EmailStr
 
     @field_validator("contact_name")
@@ -217,7 +217,7 @@ class ProductCreateRequest(BaseModel):
     location_country:   str          = Field(min_length=2, max_length=100)
     location_port:      str | None   = Field(default=None, max_length=200)
     location_details:   str | None   = Field(default=None, max_length=500)
-    asking_price:       Decimal      = Field(gt=0)
+    asking_price:       Decimal      = Field(ge=0)   # 0 = price on request
     currency:           str          = Field(default="USD", min_length=3, max_length=5)
     contact:            ProductContactInput
     attribute_values:   list[AttributeValueInput] = []

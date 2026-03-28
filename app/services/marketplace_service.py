@@ -634,6 +634,49 @@ async def resubmit_product(
 # PRODUCT QUERIES
 # ══════════════════════════════════════════════════════════════════════════════
 
+async def get_product_verification_status(
+    db: asyncpg.Connection,
+    product_id: uuid.UUID,
+    seller_id: uuid.UUID,
+) -> dict | None:
+    """Return verification assignment details visible to the owning seller."""
+    row = await db.fetchrow(
+        """
+        SELECT
+            va.id,
+            va.status,
+            COALESCE(ap.full_name, agu.email) AS agent_name,
+            va.assigned_at,
+            va.scheduled_date,
+            va.updated_at,
+            EXISTS(
+                SELECT 1 FROM marketplace.verification_reports vr
+                WHERE vr.assignment_id = va.id
+            ) AS report_submitted
+        FROM marketplace.products p
+        JOIN marketplace.verification_assignments va
+               ON va.product_id = p.id AND va.cycle_number = p.verification_cycle + 1
+        LEFT JOIN public.profiles ap ON ap.id = va.agent_id
+        LEFT JOIN auth.users agu ON agu.id = va.agent_id
+        WHERE p.id = $1 AND p.seller_id = $2
+        """,
+        product_id,
+        seller_id,
+    )
+    if not row:
+        return None
+    r = dict(row)
+    return {
+        "id": str(r["id"]),
+        "status": r["status"],
+        "agent_name": r["agent_name"],
+        "assigned_at": r["assigned_at"].isoformat() if r["assigned_at"] else None,
+        "scheduled_date": str(r["scheduled_date"]) if r["scheduled_date"] else None,
+        "report_submitted": bool(r["report_submitted"]),
+        "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
+    }
+
+
 async def get_product_detail(
     db: asyncpg.Connection,
     product_id: uuid.UUID,

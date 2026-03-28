@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"print\\(repr\\(open\\(''app/routers/kyc/agent.py''\\).read\\(\\)[:200]\\)\\)\")",
+      "Bash(netstat -ano)",
+      "Bash(python -c \":*)",
+      "Bash(python test_kyc_flow.py approve)",
+      "Bash(python test_deals_flow.py)",
+      "Bash(source venv/Scripts/activate)"
+    ]
+  }
+}

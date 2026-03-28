@@ -33,6 +33,7 @@ from app.services.marketplace_service import (
     delete_product_draft,
     delete_product_image,
     get_product_detail,
+    get_product_verification_status,
     list_seller_products,
     resubmit_product,
     set_primary_image,
@@ -205,6 +206,22 @@ async def delete_image(
 ):
     await delete_product_image(db, product_id, image_id, current_user)
     return MessageResponse(message="Image deleted.")
+
+
+@router.get(
+    "/listings/{product_id}/verification",
+    summary="Get verification status for seller's own listing",
+    description="Returns the current verification assignment details for a listing owned by the authenticated seller.",
+)
+async def get_listing_verification_status(
+    product_id: UUID,
+    db: DbConn,
+    current_user: dict = SellerUser,
+):
+    from uuid import UUID as _UUID
+    return await get_product_verification_status(
+        db, product_id, _UUID(str(current_user["id"]))
+    )
 
 
 @router.patch(
