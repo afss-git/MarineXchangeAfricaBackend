@@ -2305,7 +2305,9 @@ export interface VerificationAssignmentDetail extends VerificationAssignmentItem
   location_port: string | null; category_name: string | null
   availability_type: string | null; description: string | null
   scheduled_date: string | null; contact_notes: string | null
-  seller_company: string | null; assigned_by_name: string | null
+  seller_company: string | null; seller_name: string | null
+  seller_phone: string | null; seller_email: string | null
+  assigned_by_name: string | null
   images: { id: string; signed_url: string; is_primary: boolean }[]
   attribute_values: { attribute_id: string; attribute_name: string; value_text: string | null; value_numeric: number | null; value_boolean: boolean | null }[]
   report: VerificationReportOut | null

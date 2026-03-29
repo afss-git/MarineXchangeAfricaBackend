@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import {
   Search, CheckCircle2, RefreshCw, Eye,
   ChevronDown, ChevronUp, AlertCircle, Loader2, Package,
-  FileText, Upload, X, File as FileIcon,
+  FileText, Upload, X, File as FileIcon, Phone, Mail,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -379,6 +379,34 @@ function AssignmentPanel({ item, onReported }: {
           <p className="font-medium text-text-primary capitalize">{product.availability_type?.replace(/_/g, " ") ?? "—"}</p>
         </div>
       </div>
+
+      {/* Seller contact */}
+      {(product.seller_phone || product.seller_email) && (
+        <div className="mx-5 mb-4 p-4 bg-ocean/5 rounded-xl border border-ocean/20">
+          <p className="text-xs font-semibold text-ocean uppercase tracking-wide mb-3">Seller Contact</p>
+          <div className="flex flex-wrap gap-4">
+            {product.seller_name && (
+              <p className="text-sm font-medium text-text-primary w-full">{product.seller_name}{product.seller_company ? ` · ${product.seller_company}` : ""}</p>
+            )}
+            {product.seller_phone && (
+              <a
+                href={`tel:${product.seller_phone}`}
+                className="flex items-center gap-2 text-sm text-ocean hover:text-ocean-dark font-medium"
+              >
+                <Phone className="w-4 h-4" /> {product.seller_phone}
+              </a>
+            )}
+            {product.seller_email && (
+              <a
+                href={`mailto:${product.seller_email}`}
+                className="flex items-center gap-2 text-sm text-ocean hover:text-ocean-dark font-medium"
+              >
+                <Mail className="w-4 h-4" /> {product.seller_email}
+              </a>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Description */}
       {product.description && (

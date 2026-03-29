@@ -1740,6 +1740,9 @@ async def get_assignment_detail(
         SELECT
             va.id, va.product_id, mp.title AS product_title,
             pr.company_name AS seller_company,
+            pr.full_name AS seller_name,
+            pr.phone_number AS seller_phone,
+            su.email AS seller_email,
             va.agent_id,
             ab.full_name AS assigned_by_name,
             va.cycle_number, va.status, va.scheduled_date,
@@ -1757,6 +1760,7 @@ async def get_assignment_detail(
         FROM marketplace.verification_assignments va
         JOIN marketplace.products mp ON mp.id = va.product_id
         LEFT JOIN public.profiles pr ON pr.id = mp.seller_id
+        LEFT JOIN auth.users su ON su.id = mp.seller_id
         LEFT JOIN public.profiles ab ON ab.id = va.assigned_by
         LEFT JOIN marketplace.categories mc ON mc.id = mp.category_id
         WHERE va.id = $1
