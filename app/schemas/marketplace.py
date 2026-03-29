@@ -363,7 +363,8 @@ class AssignVerificationAgentRequest(BaseModel):
     """Admin assigns a verification agent to a pending product."""
     model_config = {"extra": "forbid"}
 
-    agent_id:   UUID
+    agent_id:            UUID
+    full_history_access: bool = False
 
 
 class UpdateVerificationAssignmentRequest(BaseModel):

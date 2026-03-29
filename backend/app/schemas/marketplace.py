@@ -363,7 +363,8 @@ class AssignVerificationAgentRequest(BaseModel):
     """Admin assigns a verification agent to a pending product."""
     model_config = {"extra": "forbid"}
 
-    agent_id:   UUID
+    agent_id:            UUID
+    full_history_access: bool = False
 
 
 class UpdateVerificationAssignmentRequest(BaseModel):
@@ -394,7 +395,7 @@ _OUTCOME_TO_RECOMMENDATION = {v: k for k, v in _RECOMMENDATION_TO_OUTCOME.items(
 class EvidenceFileInput(BaseModel):
     """A pre-uploaded evidence file to attach to a verification report."""
     storage_path: str
-    file_type:    str = "image"   # image | document
+    file_type:    str = "image"   # "image" | "document"
     description:  str = ""
 
 
@@ -402,7 +403,6 @@ class SubmitVerificationReportRequest(BaseModel):
     """
     Agent submits a verification report (immutable after submission).
     If attribute_updates are included, they are persisted on the product.
-    evidence_files are pre-uploaded paths that become verification_evidence records.
     """
     model_config = {"extra": "forbid"}
 

@@ -1458,16 +1458,18 @@ async def assign_verification_agent(
         assignment = await db.fetchrow(
             """
             INSERT INTO marketplace.verification_assignments
-                (product_id, agent_id, assigned_by, cycle_number, status)
-            VALUES ($1, $2, $3, $4, 'assigned')
+                (product_id, agent_id, assigned_by, cycle_number, status, full_history_access)
+            VALUES ($1, $2, $3, $4, 'assigned', $5)
             ON CONFLICT (product_id, cycle_number) DO UPDATE SET
-                agent_id    = EXCLUDED.agent_id,
-                assigned_by = EXCLUDED.assigned_by,
-                status      = 'assigned',
-                updated_at  = NOW()
+                agent_id            = EXCLUDED.agent_id,
+                assigned_by         = EXCLUDED.assigned_by,
+                status              = 'assigned',
+                full_history_access = EXCLUDED.full_history_access,
+                updated_at          = NOW()
             RETURNING *
             """,
             product_id, payload.agent_id, admin_id, cycle,
+            payload.full_history_access,
         )
 
     await write_audit_log(
@@ -1699,6 +1701,8 @@ async def get_agent_assignments(
             ab.full_name AS assigned_by_name,
             va.cycle_number, va.status, va.scheduled_date,
             va.contact_notes, va.created_at, va.updated_at,
+            va.full_history_access,
+            mp.status AS product_status,
             EXISTS(
                 SELECT 1 FROM marketplace.verification_reports vr
                 WHERE vr.assignment_id = va.id
@@ -1740,6 +1744,8 @@ async def get_assignment_detail(
             ab.full_name AS assigned_by_name,
             va.cycle_number, va.status, va.scheduled_date,
             va.contact_notes, va.created_at, va.updated_at,
+            va.full_history_access,
+            mp.status AS product_status,
             EXISTS(
                 SELECT 1 FROM marketplace.verification_reports vr
                 WHERE vr.assignment_id = va.id
@@ -1824,6 +1830,47 @@ async def get_assignment_detail(
     else:
         result["report"] = None
         result["evidence_files"] = []
+
+    # Previous cycles — only loaded when full_history_access is True
+    if result.get("full_history_access"):
+        prev_rows = await db.fetch(
+            """
+            SELECT
+                va2.id, va2.cycle_number, va2.status, va2.assigned_at,
+                ag.full_name AS agent_name, ag2.email AS agent_email,
+                vr.outcome, vr.findings, vr.asset_condition,
+                vr.recommendations, vr.submitted_at
+            FROM marketplace.verification_assignments va2
+            LEFT JOIN public.profiles ag  ON ag.id  = va2.agent_id
+            LEFT JOIN auth.users     ag2  ON ag2.id = va2.agent_id
+            LEFT JOIN marketplace.verification_reports vr ON vr.assignment_id = va2.id
+            WHERE va2.product_id = $1 AND va2.cycle_number < $2
+            ORDER BY va2.cycle_number ASC
+            """,
+            product_id, result["cycle_number"],
+        )
+        _outcome_map = {
+            "verified": "approve",
+            "failed": "reject",
+            "requires_clarification": "request_corrections",
+        }
+        result["previous_cycles"] = [
+            {
+                "id": str(r["id"]),
+                "cycle_number": r["cycle_number"],
+                "status": r["status"],
+                "assigned_at": r["assigned_at"].isoformat() if r["assigned_at"] else None,
+                "agent_name": r["agent_name"] or r["agent_email"],
+                "outcome": _outcome_map.get(r["outcome"], r["outcome"]) if r["outcome"] else None,
+                "findings": r["findings"],
+                "asset_condition": r["asset_condition"],
+                "recommendations": r["recommendations"],
+                "submitted_at": r["submitted_at"].isoformat() if r["submitted_at"] else None,
+            }
+            for r in prev_rows
+        ]
+    else:
+        result["previous_cycles"] = []
 
     return result
 
@@ -1926,9 +1973,16 @@ async def admin_update_product(
             detail="No fields to update.",
         )
 
+    # Capture original values before overwriting (for audit trail)
+    from decimal import Decimal
+    old_state: dict[str, Any] = {}
+    for k in updates:
+        v = product[k]
+        old_state[k] = float(v) if isinstance(v, Decimal) else v
+
     set_clause = ", ".join(f"{k} = ${i+2}" for i, k in enumerate(updates.keys()))
     await db.execute(
-        f"UPDATE marketplace.products SET {set_clause} WHERE id = $1",
+        f"UPDATE marketplace.products SET {set_clause}, updated_at = NOW() WHERE id = $1",
         product_id, *updates.values(),
     )
 
@@ -1939,7 +1993,8 @@ async def admin_update_product(
         action=AuditAction.PRODUCT_UPDATED,
         resource_type="product",
         resource_id=str(product_id),
-        new_state={"updated_fields": list(updates.keys())},
+        old_state=old_state,
+        new_state={"updated_fields": list(updates.keys()), **{k: (float(v) if isinstance(v, Decimal) else v) for k, v in updates.items()}},
         metadata={"ip": actor.get("_client_ip")},
     )
 

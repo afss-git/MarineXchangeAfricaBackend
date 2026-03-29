@@ -294,11 +294,12 @@ function AdminActionModal({
   action: ActionType; productId: string
   onDone: () => void; onClose: () => void
 }) {
-  const [note, setNote]         = useState("")
-  const [agentId, setAgentId]   = useState("")
-  const [agents, setAgents]     = useState<{ id: string; full_name: string | null; email: string }[]>([])
-  const [submitting, setSubmitting] = useState(false)
-  const [err, setErr]           = useState<string | null>(null)
+  const [note, setNote]               = useState("")
+  const [agentId, setAgentId]         = useState("")
+  const [fullHistory, setFullHistory] = useState(false)
+  const [agents, setAgents]           = useState<{ id: string; full_name: string | null; email: string }[]>([])
+  const [submitting, setSubmitting]   = useState(false)
+  const [err, setErr]                 = useState<string | null>(null)
 
   useEffect(() => {
     if (action === "assign_agent") {
@@ -322,7 +323,7 @@ function AdminActionModal({
     try {
       if (action === "assign_agent") {
         if (!agentId) { setErr("Please select an agent."); setSubmitting(false); return }
-        await marketplaceAdmin.assignAgent(productId, agentId)
+        await marketplaceAdmin.assignAgent(productId, agentId, fullHistory)
       } else if (action === "delist") {
         await marketplaceAdmin.delist(productId, note || undefined)
       } else {
@@ -353,18 +354,35 @@ function AdminActionModal({
         </div>
         <div className="px-6 py-5 space-y-4">
           {action === "assign_agent" ? (
-            <div>
-              <label className="block text-xs font-semibold text-text-secondary mb-1.5">Select Agent</label>
-              <select
-                value={agentId}
-                onChange={e => setAgentId(e.target.value)}
-                className="w-full border border-border rounded-lg px-3 py-2 text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-ocean/30"
-              >
-                <option value="">— Choose agent —</option>
-                {agents.map(a => (
-                  <option key={a.id} value={a.id}>{a.full_name || a.email}</option>
-                ))}
-              </select>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-text-secondary mb-1.5">Select Agent</label>
+                <select
+                  value={agentId}
+                  onChange={e => setAgentId(e.target.value)}
+                  className="w-full border border-border rounded-lg px-3 py-2 text-sm text-text-primary bg-white focus:outline-none focus:ring-2 focus:ring-ocean/30"
+                >
+                  <option value="">— Choose agent —</option>
+                  {agents.map(a => (
+                    <option key={a.id} value={a.id}>{a.full_name || a.email}</option>
+                  ))}
+                </select>
+              </div>
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={fullHistory}
+                  onChange={e => setFullHistory(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-border text-ocean focus:ring-ocean/30"
+                />
+                <div>
+                  <p className="text-sm font-medium text-text-primary">Grant full history access</p>
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    Agent will see all previous cycle reports and inspection evidence for this product.
+                    Leave unchecked to start a fresh inspection.
+                  </p>
+                </div>
+              </label>
             </div>
           ) : (
             <div>
@@ -879,20 +897,40 @@ function ListingDetailPanel({ listing, onActionDone }: { listing: Listing; onAct
           {showActivity && (
             <div className="bg-white rounded-xl border border-border overflow-hidden">
               <div className="divide-y divide-border max-h-64 overflow-y-auto">
-                {activity.map((ev, i) => (
-                  <div key={i} className="flex items-start gap-3 px-4 py-3">
-                    <div className="w-1.5 h-1.5 rounded-full bg-ocean shrink-0 mt-1.5" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-text-primary">
-                        {ev.action.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}
-                      </p>
-                      <p className="text-[11px] text-text-secondary">
-                        {ev.actor_name ? `by ${ev.actor_name}` : "system"}
-                      </p>
+                {activity.map((ev, i) => {
+                  const changedFields = ev.old_state && ev.new_state
+                    ? Object.keys(ev.old_state).filter(k => ev.new_state && k in ev.new_state && ev.old_state![k] !== ev.new_state![k])
+                    : []
+                  return (
+                    <div key={i} className="px-4 py-3">
+                      <div className="flex items-start gap-3">
+                        <div className="w-1.5 h-1.5 rounded-full bg-ocean shrink-0 mt-1.5" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-text-primary">
+                            {ev.action.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                          </p>
+                          <p className="text-[11px] text-text-secondary">
+                            {ev.actor_name ? `by ${ev.actor_name}` : "system"}
+                          </p>
+                          {changedFields.length > 0 && (
+                            <div className="mt-1.5 space-y-0.5">
+                              {changedFields.map(field => (
+                                <p key={field} className="text-[10px] text-text-secondary">
+                                  <span className="font-medium capitalize">{field.replace(/_/g, " ")}</span>
+                                  {": "}
+                                  <span className="line-through text-danger/60">{String(ev.old_state![field] ?? "—")}</span>
+                                  {" → "}
+                                  <span className="text-success">{String(ev.new_state![field] ?? "—")}</span>
+                                </p>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-text-secondary shrink-0">{fmtDateTime(ev.created_at)}</p>
+                      </div>
                     </div>
-                    <p className="text-[11px] text-text-secondary shrink-0">{fmtDateTime(ev.created_at)}</p>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}

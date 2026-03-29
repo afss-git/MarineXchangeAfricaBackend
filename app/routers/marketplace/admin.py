@@ -1,13 +1,16 @@
 """
 Admin marketplace management endpoints.
 
-GET  /marketplace/admin/products           — all products (any status, filterable)
-GET  /marketplace/admin/products/{id}      — product detail with contact info
-PUT  /marketplace/admin/products/{id}      — edit any product field
-POST /marketplace/admin/products/{id}/assign-agent  — assign verification agent
-POST /marketplace/admin/products/{id}/decide        — approve/reject/request corrections
-POST /marketplace/admin/products/{id}/delist        — delist an active listing
-GET  /marketplace/admin/products/pending-approval   — products awaiting admin decision
+GET  /marketplace/admin/products                        — all products (any status, filterable)
+GET  /marketplace/admin/products/{id}                   — product detail with contact info
+PUT  /marketplace/admin/products/{id}                   — edit any product field
+POST /marketplace/admin/products/{id}/assign-agent      — assign verification agent
+POST /marketplace/admin/products/{id}/decide            — approve/reject/request corrections
+POST /marketplace/admin/products/{id}/delist            — delist an active listing
+GET  /marketplace/admin/products/pending-approval       — products awaiting admin decision
+GET  /marketplace/admin/products/pending-verification   — products awaiting agent assignment
+GET  /marketplace/admin/products/pending-reverification — products awaiting seller resubmission
+GET  /marketplace/admin/products/{id}/activity          — audit trail for a product
 """
 from __future__ import annotations
 
@@ -97,6 +100,21 @@ async def admin_pending_verification(
 
 
 @router.get(
+    "/admin/products/pending-reverification",
+    response_model=PaginatedProductsResponse,
+    summary="Products awaiting seller resubmission",
+    description="Shortcut: returns all listings in 'pending_reverification' status.",
+)
+async def admin_pending_reverification(
+    db: DbConn,
+    current_user: dict = AdminOnly,
+    page:      int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+):
+    return await list_admin_products(db, page=page, page_size=page_size, status_filter="pending_reverification")
+
+
+@router.get(
     "/admin/products/{product_id}",
     response_model=ProductDetailResponse,
     summary="Get product detail (admin view)",
@@ -183,6 +201,7 @@ async def product_activity(
             al.action,
             al.resource_type,
             al.resource_id,
+            al.old_state,
             al.new_state,
             al.created_at,
             COALESCE(p.full_name, au.email, al.actor_id) AS actor_name
@@ -200,7 +219,8 @@ async def product_activity(
             "action":        r["action"],
             "actor_name":    r["actor_name"],
             "resource_type": r["resource_type"],
-            "new_state":     r["new_state"],
+            "old_state":     dict(r["old_state"]) if r["old_state"] else None,
+            "new_state":     dict(r["new_state"]) if r["new_state"] else None,
             "created_at":    r["created_at"].isoformat() if r["created_at"] else None,
         }
         for r in rows

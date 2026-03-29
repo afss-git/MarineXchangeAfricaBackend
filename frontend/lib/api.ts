@@ -2185,7 +2185,9 @@ export interface AdminProductDetail extends AdminProductListItem {
 
 export interface ProductActivityItem {
   action: string; actor_name: string | null
-  resource_type: string; new_state: Record<string, unknown> | null
+  resource_type: string
+  old_state: Record<string, unknown> | null
+  new_state: Record<string, unknown> | null
   created_at: string | null
 }
 
@@ -2228,9 +2230,9 @@ export const marketplaceAdmin = {
     method: "PUT", body: JSON.stringify(data),
   }),
 
-  assignAgent: (id: string, agentId: string) =>
+  assignAgent: (id: string, agentId: string, fullHistoryAccess = false) =>
     request<MessageResponse>(`/marketplace/admin/products/${id}/assign-agent`, {
-      method: "POST", body: JSON.stringify({ agent_id: agentId }),
+      method: "POST", body: JSON.stringify({ agent_id: agentId, full_history_access: fullHistoryAccess }),
     }),
 
   decide: (id: string, data: AdminProductDecision) =>
@@ -2281,6 +2283,7 @@ export interface VerificationAssignmentItem {
   agent_id: string; status: string
   assigned_at: string; updated_at: string
   product_status: string; seller_company: string | null
+  full_history_access: boolean
 }
 
 export interface VerificationReportOut {
@@ -2308,6 +2311,15 @@ export interface VerificationAssignmentDetail extends VerificationAssignmentItem
   report: VerificationReportOut | null
   report_submitted: boolean
   evidence_files: VerificationEvidenceFile[]
+  previous_cycles: PreviousCycleRecord[]
+}
+
+export interface PreviousCycleRecord {
+  id: string; cycle_number: number; status: string; assigned_at: string
+  agent_name: string | null; agent_email: string | null
+  outcome: string | null; findings: string | null
+  asset_condition: string | null; recommendations: string | null
+  submitted_at: string | null
 }
 
 export interface AttributeDefinition {

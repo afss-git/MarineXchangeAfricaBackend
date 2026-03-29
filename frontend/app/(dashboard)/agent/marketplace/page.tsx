@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import {
   verificationAgent,
-  VerificationAssignmentItem, VerificationAssignmentDetail,
+  VerificationAssignmentItem, VerificationAssignmentDetail, PreviousCycleRecord,
 } from "@/lib/api"
 import { useAgentAssignments } from "@/lib/hooks"
 
@@ -45,9 +45,24 @@ const ASSIGN_STATUS_CFG: Record<string, { label: string; className: string }> = 
   completed:            { label: "Completed",           className: "bg-gray-100 text-gray-500 border-gray-200" },
 }
 
+const PRODUCT_STATUS_CFG: Record<string, { label: string; className: string }> = {
+  pending_verification:    { label: "Awaiting Assignment",          className: "bg-gray-100 text-gray-500 border-gray-200" },
+  under_verification:      { label: "Under Verification",           className: "bg-ocean/10 text-ocean border-ocean/20" },
+  pending_reverification:  { label: "Awaiting Seller Resubmission", className: "bg-warning/10 text-warning border-warning/20" },
+  pending_approval:        { label: "Awaiting Admin Decision",      className: "bg-purple-50 text-purple-600 border-purple-200" },
+  active:                  { label: "Active",                       className: "bg-success/10 text-success border-success/20" },
+  rejected:                { label: "Rejected",                     className: "bg-danger/10 text-danger border-danger/20" },
+  verification_failed:     { label: "Verification Failed",          className: "bg-danger/10 text-danger border-danger/20" },
+}
+
 function AssignBadge({ status }: { status: string }) {
   const cfg = ASSIGN_STATUS_CFG[status] ?? { label: status, className: "bg-gray-100 text-gray-600 border-gray-200" }
   return <Badge className={cn("text-xs border capitalize", cfg.className)}>{cfg.label}</Badge>
+}
+
+function ProductStatusBadge({ status }: { status: string }) {
+  const cfg = PRODUCT_STATUS_CFG[status] ?? { label: status.replace(/_/g, " "), className: "bg-gray-100 text-gray-600 border-gray-200" }
+  return <Badge className={cn("text-xs border", cfg.className)}>{cfg.label}</Badge>
 }
 
 // ── Expanded assignment detail + report form ───────────────────────────────────
@@ -158,6 +173,64 @@ function EvidenceUploadSection({
   )
 }
 
+// ── Previous cycles history panel ──────────────────────────────────────────────
+
+function PreviousCyclesPanel({ cycles }: { cycles: PreviousCycleRecord[] }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="px-5 py-3 border-t border-border">
+      <button
+        onClick={() => setOpen((p) => !p)}
+        className="flex items-center gap-2 text-xs font-semibold text-text-secondary uppercase tracking-wide w-full text-left hover:text-text-primary transition-colors"
+      >
+        <FileText className="w-3.5 h-3.5" />
+        Previous Inspection Cycles ({cycles.length})
+        {open ? <ChevronUp className="w-3.5 h-3.5 ml-auto" /> : <ChevronDown className="w-3.5 h-3.5 ml-auto" />}
+      </button>
+      {open && (
+        <div className="mt-3 space-y-3">
+          {cycles.map((cycle) => (
+            <div key={cycle.id} className="p-4 bg-gray-50 rounded-lg border border-border text-sm">
+              <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+                <p className="font-semibold text-text-primary">Cycle #{cycle.cycle_number}</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {cycle.outcome && (
+                    <Badge className={cn("text-xs border", {
+                      "bg-success/10 text-success border-success/20":  cycle.outcome === "verified",
+                      "bg-danger/10 text-danger border-danger/20":     cycle.outcome === "failed",
+                      "bg-warning/10 text-warning border-warning/20":  cycle.outcome === "requires_clarification",
+                    })}>
+                      {cycle.outcome === "verified" ? "Verified"
+                        : cycle.outcome === "failed" ? "Failed"
+                        : "Requires Clarification"}
+                    </Badge>
+                  )}
+                  <span className="text-xs text-text-secondary">{fmtDate(cycle.assigned_at)}</span>
+                </div>
+              </div>
+              <p className="text-xs text-text-secondary mb-1">
+                Agent: <span className="font-medium text-text-primary">{cycle.agent_name ?? cycle.agent_email ?? "—"}</span>
+              </p>
+              {cycle.asset_condition && (
+                <p className="text-xs text-text-secondary">Condition: <span className="text-text-primary">{cycle.asset_condition}</span></p>
+              )}
+              {cycle.findings && (
+                <p className="text-xs text-text-secondary mt-1 line-clamp-3">{cycle.findings}</p>
+              )}
+              {cycle.recommendations && (
+                <p className="text-xs text-text-secondary mt-1 italic">{cycle.recommendations}</p>
+              )}
+              {cycle.submitted_at && (
+                <p className="text-xs text-text-secondary mt-1">Submitted: {fmtDate(cycle.submitted_at)}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Assignment detail + report form ────────────────────────────────────────────
 
 function AssignmentPanel({ item, onReported }: {
@@ -250,8 +323,21 @@ function AssignmentPanel({ item, onReported }: {
 
   return (
     <div className="border-t border-border">
+      {/* Pending reverification notice */}
+      {detail.product_status === "pending_reverification" && (
+        <div className="flex items-start gap-3 px-5 py-3 bg-warning/5 border-b border-warning/20">
+          <AlertCircle className="w-4 h-4 text-warning mt-0.5 shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-warning">Awaiting seller resubmission</p>
+            <p className="text-xs text-text-secondary mt-0.5">
+              Admin has requested corrections from the seller. You will be notified once the seller resubmits.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Mark in-progress banner */}
-      {isAssigned && canSubmit && (
+      {isAssigned && canSubmit && detail.product_status !== "pending_reverification" && (
         <div className="flex items-center justify-between px-5 py-3 bg-ocean/5 border-b border-border">
           <p className="text-sm text-ocean">Mark this assignment as In Progress to begin your inspection.</p>
           <Button
@@ -335,6 +421,11 @@ function AssignmentPanel({ item, onReported }: {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Previous verification cycles */}
+      {(detail.previous_cycles?.length ?? 0) > 0 && (
+        <PreviousCyclesPanel cycles={detail.previous_cycles} />
       )}
 
       {/* Existing report */}
@@ -593,7 +684,10 @@ export default function AgentMarketplacePage() {
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-3 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                    {item.product_status && item.product_status !== "under_verification" && (
+                      <ProductStatusBadge status={item.product_status} />
+                    )}
                     <AssignBadge status={item.status} />
                     {isOpen ? <ChevronUp className="w-4 h-4 text-text-secondary" /> : <ChevronDown className="w-4 h-4 text-text-secondary" />}
                   </div>
