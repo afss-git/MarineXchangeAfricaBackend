@@ -14,9 +14,10 @@ PATCH  /marketplace/listings/{id}/images/{img_id}/primary — set as primary
 """
 from __future__ import annotations
 
+import uuid
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
 
 from app.deps import DbConn, require_roles
 from app.schemas.marketplace import (
@@ -34,6 +35,7 @@ from app.services.marketplace_service import (
     delete_product_image,
     delete_product_document,
     get_product_detail,
+    get_product_timeline,
     get_product_verification_status,
     list_seller_products,
     resubmit_product,
@@ -224,6 +226,31 @@ async def get_listing_verification_status(
     return await get_product_verification_status(
         db, product_id, _UUID(str(current_user["id"]))
     )
+
+
+@router.get(
+    "/listings/{product_id}/timeline",
+    summary="Verification timeline for seller's own listing",
+    description=(
+        "Returns a chronological list of all events for the listing: "
+        "status changes, agent assignments, and inspection reports. "
+        "Admin names are anonymised — sellers see 'MarineXchange Team'."
+    ),
+)
+async def get_listing_timeline(
+    product_id: UUID,
+    db: DbConn,
+    current_user: dict = SellerUser,
+) -> list[dict]:
+    # Verify ownership
+    seller_id = uuid.UUID(str(current_user["id"]))
+    product = await db.fetchrow(
+        "SELECT id FROM marketplace.products WHERE id = $1 AND seller_id = $2 AND deleted_at IS NULL",
+        product_id, seller_id,
+    )
+    if not product:
+        raise HTTPException(status_code=404, detail="Listing not found.")
+    return await get_product_timeline(db, product_id, viewer_role="seller")
 
 
 @router.patch(

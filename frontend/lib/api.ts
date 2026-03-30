@@ -544,6 +544,9 @@ export const seller = {
   getVerificationStatus: (listingId: string) =>
     request<SellerVerificationStatus | null>(`/marketplace/listings/${listingId}/verification`),
 
+  getTimeline: (listingId: string) =>
+    request<ProductTimelineEvent[]>(`/marketplace/listings/${listingId}/timeline`),
+
   uploadDocument: (listingId: string, formData: FormData) =>
     upload<ProductDocument>(`/marketplace/listings/${listingId}/documents`, formData),
 
@@ -2270,12 +2273,22 @@ export const marketplaceAdmin = {
 
 export interface SellerVerificationStatus {
   id: string
-  status: string           // assigned | in_review | report_submitted | completed
+  status: string           // assigned | contacted | inspection_scheduled | inspection_done | report_submitted | completed
   agent_name: string | null
   assigned_at: string
   scheduled_date: string | null
   report_submitted: boolean
   updated_at: string
+}
+
+export interface ProductTimelineEvent {
+  event_type: "status_change" | "agent_assigned" | "report_submitted"
+  new_status: string | null
+  label: string
+  detail: string | null
+  reason: string | null
+  actor: string
+  timestamp: string
 }
 
 // ── Marketplace Verification Agent types ──────────────────────────────────────

@@ -5,6 +5,8 @@ import { useParams } from "next/navigation"
 import Link from "next/link"
 import {
   ChevronLeft,
+  ChevronDown,
+  ChevronUp,
   Save,
   Upload,
   Trash2,
@@ -42,6 +44,7 @@ import {
   type ProductDetail,
   type ProductImage,
   type SellerVerificationStatus,
+  type ProductTimelineEvent,
   type CategoryResponse,
   ApiRequestError,
 } from "@/lib/api"
@@ -170,11 +173,11 @@ function stepIndex(
   agentAssigned: boolean,
   verif: SellerVerificationStatus | null,
 ): number {
-  if (["active", "rejected", "verification_failed"].includes(productStatus)) return 5
+  if (["active", "rejected", "pending_reverification", "verification_failed"].includes(productStatus)) return 5
   if (productStatus === "pending_approval" || verif?.report_submitted) return 4
-  if (verif?.status === "in_review") return 3
-  if (agentAssigned) return 2
-  return 1  // submitted / pending_verification
+  if (verif?.status && ["contacted", "inspection_scheduled", "inspection_done"].includes(verif.status)) return 3
+  if (agentAssigned || verif?.status === "assigned") return 2
+  return 1
 }
 
 interface VerificationTimelineProps {
@@ -190,8 +193,10 @@ function VerificationTimeline({
   productStatus, submittedAt, agentAssigned, verif, adminNotes, rejectionReason
 }: VerificationTimelineProps) {
   const current = stepIndex(productStatus, agentAssigned, verif)
-  const isApproved = productStatus === "active"
-  const isRejected = productStatus === "rejected"
+  const isApproved      = productStatus === "active"
+  const isRejected      = productStatus === "rejected"
+  const isCorrections   = productStatus === "pending_reverification"
+  const isFailed        = productStatus === "verification_failed"
 
   return (
     <div className="bg-white rounded-xl border border-border shadow-sm p-5 space-y-4">
@@ -213,8 +218,10 @@ function VerificationTimeline({
           if (isActive) { statusDot = "bg-ocean"; iconColor = "text-ocean"; labelColor = "text-text-primary font-semibold" }
           // Final step outcome colours
           if (i === 4 && isDone) {
-            if (isApproved) { statusDot = "bg-success"; iconColor = "text-success" }
-            if (isRejected) { statusDot = "bg-danger"; iconColor = "text-danger"; labelColor = "text-danger font-semibold" }
+            if (isApproved)    { statusDot = "bg-success"; iconColor = "text-success" }
+            if (isRejected)    { statusDot = "bg-danger";  iconColor = "text-danger";  labelColor = "text-danger font-semibold" }
+            if (isCorrections) { statusDot = "bg-orange-400"; iconColor = "text-orange-500"; labelColor = "text-orange-600 font-semibold" }
+            if (isFailed)      { statusDot = "bg-danger";  iconColor = "text-danger";  labelColor = "text-danger font-semibold" }
           }
 
           let subtext: string | null = null
@@ -231,7 +238,10 @@ function VerificationTimeline({
             subtext = "Agent report submitted"
           }
           if (step.key === "decision" && isDone) {
-            subtext = isApproved ? "Listing approved — now live" : "Listing rejected"
+            subtext = isApproved      ? "Listing approved — now live"
+                    : isCorrections   ? "Corrections requested — see instructions below"
+                    : isFailed        ? "Verification failed"
+                    : "Listing rejected"
           }
 
           return (
@@ -273,6 +283,106 @@ function VerificationTimeline({
   )
 }
 
+// ── Verification History ──────────────────────────────────────────────────────
+
+const EVENT_ICONS: Record<string, string> = {
+  status_change:   "●",
+  agent_assigned:  "◆",
+  report_submitted: "▲",
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  active:                 "text-success",
+  rejected:               "text-danger",
+  pending_reverification: "text-orange-500",
+  verification_failed:    "text-danger",
+  pending_approval:       "text-ocean",
+  under_verification:     "text-ocean",
+  pending_verification:   "text-warning",
+}
+
+function fmtTimelineDate(iso: string) {
+  return new Date(iso).toLocaleDateString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  })
+}
+
+function VerificationHistory({ events }: { events: ProductTimelineEvent[] }) {
+  const [open, setOpen] = useState(false)
+  if (events.length === 0) return null
+  return (
+    <div className="bg-white rounded-xl border border-border shadow-sm overflow-hidden">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Clock className="w-4 h-4 text-text-secondary" />
+          <span className="text-sm font-semibold text-text-primary">Verification History</span>
+          <span className="text-xs text-text-secondary bg-gray-100 rounded-full px-2 py-0.5">{events.length} events</span>
+        </div>
+        {open
+          ? <ChevronUp className="w-4 h-4 text-text-secondary" />
+          : <ChevronDown className="w-4 h-4 text-text-secondary" />}
+      </button>
+
+      {open && (
+        <div className="border-t border-border">
+          <div className="relative px-5 py-4">
+            {/* Vertical line */}
+            <div className="absolute left-[2.35rem] top-4 bottom-4 w-px bg-border" />
+            <div className="space-y-5">
+              {events.map((ev, i) => {
+                const isLast = i === events.length - 1
+                const statusColor = ev.new_status ? (STATUS_COLORS[ev.new_status] ?? "text-text-secondary") : "text-text-secondary"
+                return (
+                  <div key={i} className="flex items-start gap-3 relative">
+                    {/* Dot */}
+                    <div className={cn(
+                      "w-5 h-5 rounded-full border-2 bg-white flex items-center justify-center shrink-0 mt-0.5 z-10",
+                      ev.new_status === "active"                ? "border-success"
+                      : ev.new_status === "rejected"            ? "border-danger"
+                      : ev.new_status === "pending_reverification" ? "border-orange-400"
+                      : ev.event_type === "agent_assigned"      ? "border-ocean"
+                      : ev.event_type === "report_submitted"    ? "border-success"
+                      : "border-gray-300"
+                    )}>
+                      <div className={cn("w-2 h-2 rounded-full",
+                        ev.new_status === "active"                ? "bg-success"
+                        : ev.new_status === "rejected"            ? "bg-danger"
+                        : ev.new_status === "pending_reverification" ? "bg-orange-400"
+                        : ev.event_type === "agent_assigned"      ? "bg-ocean"
+                        : ev.event_type === "report_submitted"    ? "bg-success"
+                        : "bg-gray-300"
+                      )} />
+                    </div>
+                    {/* Content */}
+                    <div className="flex-1 min-w-0 pb-1">
+                      <div className="flex items-center justify-between flex-wrap gap-x-3">
+                        <p className="text-sm font-semibold text-text-primary">{ev.label}</p>
+                        <p className="text-xs text-text-secondary shrink-0">{fmtTimelineDate(ev.timestamp)}</p>
+                      </div>
+                      {ev.detail && <p className="text-xs text-text-secondary mt-0.5">{ev.detail}</p>}
+                      {ev.reason && (
+                        <div className="mt-1.5 p-2.5 bg-orange-50 border border-orange-200 rounded-lg">
+                          <p className="text-xs font-medium text-orange-700 mb-0.5">Instructions:</p>
+                          <p className="text-xs text-text-primary whitespace-pre-line">{ev.reason}</p>
+                        </div>
+                      )}
+                      <p className="text-xs text-text-secondary/60 mt-0.5">by {ev.actor}</p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function EditListingPage() {
@@ -301,7 +411,8 @@ export default function EditListingPage() {
   const [saveMsg, setSaveMsg]           = useState<{ type: "success" | "error"; text: string } | null>(null)
 
   // Verification audit state
-  const [verif, setVerif] = useState<SellerVerificationStatus | null>(null)
+  const [verif, setVerif]         = useState<SellerVerificationStatus | null>(null)
+  const [timeline, setTimeline]   = useState<ProductTimelineEvent[]>([])
 
   // Image state
   const [deletingId, setDeletingId]         = useState<string | null>(null)
@@ -349,6 +460,14 @@ export default function EditListingPage() {
       .catch(() => {/* silent — not critical */})
   }, [id, listing?.verification_assignment_id])
 
+  // Fetch full history timeline
+  useEffect(() => {
+    if (!listing) return
+    sellerApi.getTimeline(id)
+      .then(setTimeline)
+      .catch(() => {/* silent */})
+  }, [id, listing?.status])
+
   // ── Save edits ──────────────────────────────────────────────────────────────
 
   const handleSave = async () => {
@@ -382,9 +501,11 @@ export default function EditListingPage() {
     setIsSubmitting(true)
     setSaveMsg(null)
     try {
-      if (listing.status === "rejected") {
+      if (listing.status === "rejected" || listing.status === "verification_failed") {
         await sellerApi.resubmitListing(id)
       } else {
+        // draft → pending_verification
+        // pending_reverification → pending_verification (backend handles both)
         await sellerApi.submitListing(id)
       }
       await loadListing()
@@ -907,6 +1028,9 @@ export default function EditListingPage() {
               rejectionReason={listing.rejection_reason ?? null}
             />
           )}
+
+          {/* Full verification history */}
+          {timeline.length > 0 && <VerificationHistory events={timeline} />}
 
           {/* Submit CTA */}
           {canSubmit && (

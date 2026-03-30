@@ -563,10 +563,13 @@ async def submit_product_for_verification(
     seller_id = uuid.UUID(str(actor["id"]))
     product = await _get_product_for_seller(db, product_id, seller_id)
 
-    if product["status"] != "draft":
+    if product["status"] not in ("draft", "pending_reverification"):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Only draft listings can be submitted. Current status: {product['status']}",
+            detail=(
+                f"Only draft or pending_reverification listings can be submitted. "
+                f"Current status: {product['status']}"
+            ),
         )
 
     # Enforce minimum images
@@ -583,11 +586,24 @@ async def submit_product_for_verification(
             ),
         )
 
-    # DB trigger validates the transition
-    await db.execute(
-        "UPDATE marketplace.products SET status = 'pending_verification' WHERE id = $1",
-        product_id,
-    )
+    old_status = product["status"]
+
+    if old_status == "pending_reverification":
+        # Seller addressed corrections — increment cycle and resubmit
+        await db.execute(
+            """UPDATE marketplace.products
+               SET status = 'pending_verification',
+                   verification_cycle = verification_cycle + 1,
+                   corrections_reason = NULL
+               WHERE id = $1""",
+            product_id,
+        )
+    else:
+        # draft → pending_verification
+        await db.execute(
+            "UPDATE marketplace.products SET status = 'pending_verification' WHERE id = $1",
+            product_id,
+        )
 
     await write_audit_log(
         db,
@@ -596,7 +612,7 @@ async def submit_product_for_verification(
         action=AuditAction.PRODUCT_SUBMITTED,
         resource_type="product",
         resource_id=str(product_id),
-        old_state={"status": "draft"},
+        old_state={"status": old_status},
         new_state={"status": "pending_verification"},
         metadata={"ip": actor.get("_client_ip")},
     )
@@ -669,7 +685,7 @@ async def get_product_verification_status(
             va.id,
             va.status,
             COALESCE(ap.full_name, agu.email) AS agent_name,
-            va.assigned_at,
+            va.created_at AS assigned_at,
             va.scheduled_date,
             va.updated_at,
             EXISTS(
@@ -1700,7 +1716,7 @@ async def get_agent_assignments(
             va.agent_id,
             ab.full_name AS assigned_by_name,
             va.cycle_number, va.status, va.scheduled_date,
-            va.contact_notes, va.created_at, va.updated_at,
+            va.contact_notes, va.created_at AS assigned_at, va.updated_at,
             va.full_history_access,
             mp.status AS product_status,
             EXISTS(
@@ -1746,7 +1762,7 @@ async def get_assignment_detail(
             va.agent_id,
             ab.full_name AS assigned_by_name,
             va.cycle_number, va.status, va.scheduled_date,
-            va.contact_notes, va.created_at, va.updated_at,
+            va.contact_notes, va.created_at AS assigned_at, va.updated_at,
             va.full_history_access,
             mp.status AS product_status,
             EXISTS(
@@ -1840,7 +1856,7 @@ async def get_assignment_detail(
         prev_rows = await db.fetch(
             """
             SELECT
-                va2.id, va2.cycle_number, va2.status, va2.assigned_at,
+                va2.id, va2.cycle_number, va2.status, va2.created_at AS assigned_at,
                 ag.full_name AS agent_name, ag2.email AS agent_email,
                 vr.outcome, vr.findings, vr.asset_condition,
                 vr.recommendations, vr.submitted_at
@@ -1961,6 +1977,167 @@ async def admin_product_decision(
 
     return {"product_id": product_id, "new_status": new_status,
             "message": f"Product {payload.decision}d successfully."}
+
+
+_TRANSITION_LABELS: dict[tuple[str | None, str], tuple[str, str]] = {
+    (None,                       "draft"):                  ("Listing Created",                "Draft listing created"),
+    ("draft",                    "pending_verification"):   ("Submitted for Verification",     "Listing submitted for agent review"),
+    ("pending_reverification",   "pending_verification"):   ("Resubmitted After Corrections",  "Seller addressed admin feedback and resubmitted"),
+    ("rejected",                 "pending_verification"):   ("Resubmitted",                    "Seller resubmitted after rejection"),
+    ("rejected",                 "pending_reverification"): ("Resubmitted",                    "Seller resubmitted after rejection"),
+    ("verification_failed",      "pending_verification"):   ("Resubmitted",                    "Seller resubmitted after verification failure"),
+    ("verification_failed",      "pending_reverification"): ("Resubmitted",                    "Seller resubmitted after failure"),
+    ("pending_verification",     "under_verification"):     ("Verification Started",           "A verification agent has begun the inspection"),
+    ("under_verification",       "pending_approval"):       ("Inspection Report Filed",        "Agent submitted report — awaiting admin decision"),
+    ("under_verification",       "verification_failed"):    ("Verification Failed",            "Agent was unable to complete verification"),
+    ("pending_approval",         "active"):                 ("Listing Approved",               "Listing is now live on the marketplace"),
+    ("pending_approval",         "rejected"):               ("Listing Rejected",               "Admin reviewed and rejected the listing"),
+    ("pending_approval",         "pending_reverification"): ("Corrections Requested",          "Admin requested changes before approval"),
+    ("active",                   "delisted"):               ("Listing Delisted",               "Listing removed from the marketplace"),
+    ("active",                   "under_offer"):            ("Offer Received",                 "A buyer has made an offer"),
+    ("under_offer",              "sold"):                   ("Listing Sold",                   "Transaction completed"),
+    ("under_offer",              "active"):                 ("Offer Withdrawn",                "Listing returned to active status"),
+}
+
+
+async def get_product_timeline(
+    db: asyncpg.Connection,
+    product_id: uuid.UUID,
+    viewer_role: str = "seller",  # "seller" | "agent" | "admin"
+) -> list[dict]:
+    """
+    Returns a unified chronological timeline of all events for a product.
+    For seller view: admin names are anonymised to 'MarineXchange Team',
+    agent names to 'Verification Agent'.
+    """
+    events: list[dict] = []
+
+    # ── 1. Status transitions ────────────────────────────────────────────────
+    status_rows = await db.fetch(
+        """
+        SELECT psh.old_status, psh.new_status, psh.reason, psh.created_at,
+               p.full_name AS actor_name, p.roles AS actor_roles
+        FROM marketplace.product_status_history psh
+        LEFT JOIN public.profiles p ON p.id = psh.changed_by
+        WHERE psh.product_id = $1
+        ORDER BY psh.created_at ASC
+        """,
+        product_id,
+    )
+    for r in status_rows:
+        actor_roles: list[str] = list(r["actor_roles"] or [])
+        is_admin = "admin" in actor_roles
+        is_agent = "verification_agent" in actor_roles
+
+        if viewer_role == "seller":
+            actor = "MarineXchange Team" if is_admin else "You"
+        elif viewer_role == "agent":
+            actor = "Admin" if is_admin else (r["actor_name"] or "Seller")
+        else:
+            actor = r["actor_name"] or "System"
+
+        old_s: str | None = r["old_status"]
+        new_s: str = r["new_status"]
+        label, detail = _TRANSITION_LABELS.get(
+            (old_s, new_s),
+            (new_s.replace("_", " ").title(), f"{old_s or '—'} → {new_s}"),
+        )
+
+        events.append({
+            "event_type": "status_change",
+            "new_status": new_s,
+            "label": label,
+            "detail": detail,
+            "reason": r["reason"],
+            "actor": actor,
+            "timestamp": r["created_at"].isoformat(),
+        })
+
+    # ── 2. Agent assignment events ───────────────────────────────────────────
+    assign_rows = await db.fetch(
+        """
+        SELECT va.cycle_number, va.created_at,
+               ag.full_name AS agent_name,
+               ab.full_name AS assigned_by_name, ab.roles AS assigned_by_roles
+        FROM marketplace.verification_assignments va
+        LEFT JOIN public.profiles ag ON ag.id = va.agent_id
+        LEFT JOIN public.profiles ab ON ab.id = va.assigned_by
+        WHERE va.product_id = $1
+        ORDER BY va.created_at ASC
+        """,
+        product_id,
+    )
+    for r in assign_rows:
+        cycle = r["cycle_number"]
+        cycle_suffix = f" — Cycle {cycle}" if cycle > 1 else ""
+
+        if viewer_role == "seller":
+            detail = f"A verification agent has been assigned to inspect your listing{cycle_suffix}."
+            actor = "MarineXchange Team"
+        elif viewer_role == "agent":
+            agent_display = r["agent_name"] or "Agent"
+            detail = f"Assigned to {agent_display}{cycle_suffix}"
+            actor = r["assigned_by_name"] or "Admin"
+        else:
+            agent_display = r["agent_name"] or "Agent"
+            detail = f"Agent: {agent_display}{cycle_suffix}"
+            actor = r["assigned_by_name"] or "Admin"
+
+        events.append({
+            "event_type": "agent_assigned",
+            "new_status": None,
+            "label": f"Verification Agent Assigned{cycle_suffix}",
+            "detail": detail,
+            "reason": None,
+            "actor": actor,
+            "timestamp": r["created_at"].isoformat(),
+        })
+
+    # ── 3. Verification report events ────────────────────────────────────────
+    report_rows = await db.fetch(
+        """
+        SELECT vr.outcome, vr.submitted_at, va.cycle_number,
+               ag.full_name AS agent_name
+        FROM marketplace.verification_reports vr
+        JOIN marketplace.verification_assignments va ON va.id = vr.assignment_id
+        LEFT JOIN public.profiles ag ON ag.id = va.agent_id
+        WHERE va.product_id = $1
+        ORDER BY vr.submitted_at ASC
+        """,
+        product_id,
+    )
+    _outcome_map = {
+        "verified":               "Recommend Approve",
+        "failed":                 "Recommend Reject",
+        "requires_clarification": "Request Corrections",
+    }
+    for r in report_rows:
+        if not r["submitted_at"]:
+            continue
+        cycle = r["cycle_number"]
+        cycle_suffix = f" — Cycle {cycle}" if cycle > 1 else ""
+
+        if viewer_role == "seller":
+            detail = f"Inspection complete{cycle_suffix}. Awaiting admin review."
+            actor = "Verification Agent"
+        else:
+            outcome = _outcome_map.get(r["outcome"], r["outcome"] or "—")
+            detail = f"Recommendation: {outcome}{cycle_suffix}"
+            actor = r["agent_name"] or "Verification Agent"
+
+        events.append({
+            "event_type": "report_submitted",
+            "new_status": None,
+            "label": f"Inspection Report Filed{cycle_suffix}",
+            "detail": detail,
+            "reason": None,
+            "actor": actor,
+            "timestamp": r["submitted_at"].isoformat(),
+        })
+
+    # Sort chronologically
+    events.sort(key=lambda e: e["timestamp"] or "")
+    return events
 
 
 async def admin_update_product(
