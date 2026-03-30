@@ -2267,6 +2267,9 @@ export const marketplaceAdmin = {
     const query = qs.toString() ? `?${qs}` : ""
     return request<PaginatedAdminProducts>(`/marketplace/admin/products/pending-verification${query}`)
   },
+
+  getTimeline: (productId: string) =>
+    request<ProductTimelineEvent[]>(`/marketplace/admin/products/${productId}/timeline`),
 }
 
 // ── Seller verification status (visible to listing owner) ─────────────────────
@@ -2388,6 +2391,9 @@ export const verificationAgent = {
   }) => request<VerificationReportOut>(`/marketplace/verification/assignments/${id}/report`, {
     method: "POST", body: JSON.stringify(data),
   }),
+
+  getTimeline: (assignmentId: string) =>
+    request<ProductTimelineEvent[]>(`/marketplace/verification/assignments/${assignmentId}/timeline`),
 
   updateSpecs: (productId: string, specs: ProductSpecs) =>
     request<MessageResponse>(`/marketplace/verification/products/${productId}/specs`, {

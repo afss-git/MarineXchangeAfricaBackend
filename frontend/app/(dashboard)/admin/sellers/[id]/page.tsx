@@ -18,7 +18,7 @@ import {
   adminSellers, admin, marketplaceAdmin, verificationAgent,
   type AdminSellerDetail, type AdminProductDetail, type VerificationAssignmentDetail,
   type VerificationEvidenceFile, type ProductActivityItem, type ProductDocument,
-  type AdminProductDecision,
+  type AdminProductDecision, type ProductTimelineEvent,
 } from "@/lib/api"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -426,8 +426,10 @@ function ListingDetailPanel({ listing, onActionDone }: { listing: Listing; onAct
   const [product, setProduct]         = useState<AdminProductDetail | null>(null)
   const [assignment, setAssignment]   = useState<VerificationAssignmentDetail | null>(null)
   const [activity, setActivity]       = useState<ProductActivityItem[]>([])
+  const [timeline, setTimeline]       = useState<ProductTimelineEvent[]>([])
   const [loadErr, setLoadErr]         = useState<string | null>(null)
   const [showActivity, setShowActivity] = useState(false)
+  const [showTimeline, setShowTimeline] = useState(false)
   const [lightbox, setLightbox]       = useState<string | null>(null)
   const [activeAction, setActiveAction] = useState<ActionType | null>(null)
 
@@ -435,16 +437,18 @@ function ListingDetailPanel({ listing, onActionDone }: { listing: Listing; onAct
     showLoader()
     setLoadErr(null)
     try {
-      const [prod, asgn, act] = await Promise.all([
+      const [prod, asgn, act, tl] = await Promise.all([
         marketplaceAdmin.get(listing.id),
         listing.verification_assignment_id
           ? verificationAgent.getAssignment(listing.verification_assignment_id)
           : Promise.resolve(null),
         marketplaceAdmin.getActivity(listing.id),
+        marketplaceAdmin.getTimeline(listing.id).catch(() => [] as ProductTimelineEvent[]),
       ])
       setProduct(prod)
       setAssignment(asgn)
       setActivity(act)
+      setTimeline(tl)
     } catch (e: unknown) {
       setLoadErr((e as Error)?.message ?? "Failed to load listing details")
     } finally {
@@ -878,7 +882,71 @@ function ListingDetailPanel({ listing, onActionDone }: { listing: Listing; onAct
         </div>
       )}
 
-      {/* ── 12. ACTIVITY LOG ──────────────────────────────────────────────── */}
+      {/* ── 12. VERIFICATION TIMELINE ─────────────────────────────────────── */}
+      {timeline.length > 0 && (
+        <div className="px-5 py-5">
+          <button
+            onClick={() => setShowTimeline(v => !v)}
+            className="flex items-center gap-2 mb-3 w-full group"
+          >
+            <Clock className="w-4 h-4 text-ocean" />
+            <p className="text-xs font-bold text-text-secondary uppercase tracking-wider flex-1 text-left">
+              Verification Timeline ({timeline.length} events)
+            </p>
+            {showTimeline
+              ? <ChevronUp className="w-4 h-4 text-text-secondary group-hover:text-text-primary" />
+              : <ChevronDown className="w-4 h-4 text-text-secondary group-hover:text-text-primary" />}
+          </button>
+
+          {showTimeline && (
+            <div className="bg-white rounded-xl border border-border overflow-hidden">
+              <div className="relative px-4 py-4 max-h-72 overflow-y-auto">
+                <div className="absolute left-[1.85rem] top-4 bottom-4 w-px bg-border" />
+                <div className="space-y-4">
+                  {timeline.map((ev, i) => (
+                    <div key={i} className="flex items-start gap-3 relative">
+                      <div className={cn(
+                        "w-4 h-4 rounded-full border-2 bg-white flex items-center justify-center shrink-0 mt-0.5 z-10",
+                        ev.new_status === "active"                   ? "border-success"
+                        : ev.new_status === "rejected"               ? "border-danger"
+                        : ev.new_status === "pending_reverification" ? "border-orange-400"
+                        : ev.event_type === "agent_assigned"         ? "border-ocean"
+                        : ev.event_type === "report_submitted"       ? "border-success"
+                        : "border-gray-300"
+                      )}>
+                        <div className={cn("w-1.5 h-1.5 rounded-full",
+                          ev.new_status === "active"                   ? "bg-success"
+                          : ev.new_status === "rejected"               ? "bg-danger"
+                          : ev.new_status === "pending_reverification" ? "bg-orange-400"
+                          : ev.event_type === "agent_assigned"         ? "bg-ocean"
+                          : ev.event_type === "report_submitted"       ? "bg-success"
+                          : "bg-gray-300"
+                        )} />
+                      </div>
+                      <div className="flex-1 min-w-0 pb-1">
+                        <div className="flex items-center justify-between flex-wrap gap-x-2">
+                          <p className="text-xs font-semibold text-text-primary">{ev.label}</p>
+                          <p className="text-[11px] text-text-secondary shrink-0">{fmtDateTime(ev.timestamp)}</p>
+                        </div>
+                        {ev.detail && <p className="text-[11px] text-text-secondary mt-0.5">{ev.detail}</p>}
+                        {ev.reason && (
+                          <div className="mt-1 p-2 bg-orange-50 border border-orange-200 rounded-lg">
+                            <p className="text-[10px] font-medium text-orange-700 mb-0.5">Note:</p>
+                            <p className="text-[11px] text-text-primary whitespace-pre-line">{ev.reason}</p>
+                          </div>
+                        )}
+                        <p className="text-[10px] text-text-secondary/60 mt-0.5">by {ev.actor}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── 13. ACTIVITY LOG ──────────────────────────────────────────────── */}
       {activity.length > 0 && (
         <div className="px-5 py-5">
           <button

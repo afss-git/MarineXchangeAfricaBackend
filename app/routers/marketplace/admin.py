@@ -34,6 +34,7 @@ from app.services.marketplace_service import (
     admin_update_product,
     assign_verification_agent,
     get_product_detail,
+    get_product_timeline,
     list_admin_products,
 )
 
@@ -225,6 +226,22 @@ async def product_activity(
         }
         for r in rows
     ]
+
+
+@router.get(
+    "/admin/products/{product_id}/timeline",
+    summary="Full verification timeline (admin view)",
+    description=(
+        "Returns a unified chronological timeline of all events for a product. "
+        "Admin view shows real actor names — no anonymisation."
+    ),
+)
+async def admin_product_timeline(
+    product_id: UUID,
+    db: DbConn,
+    current_user: dict = AdminOnly,
+) -> list[dict]:
+    return await get_product_timeline(db, product_id, viewer_role="admin")
 
 
 @router.post(

@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils"
 import {
   verificationAgent,
   VerificationAssignmentItem, VerificationAssignmentDetail, PreviousCycleRecord,
+  ProductTimelineEvent,
 } from "@/lib/api"
 import { useAgentAssignments } from "@/lib/hooks"
 
@@ -237,10 +238,12 @@ function AssignmentPanel({ item, onReported }: {
   item: VerificationAssignmentItem
   onReported: () => void
 }) {
-  const [detail, setDetail]   = useState<VerificationAssignmentDetail | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState<string | null>(null)
+  const [detail, setDetail]     = useState<VerificationAssignmentDetail | null>(null)
+  const [loading, setLoading]   = useState(true)
+  const [error, setError]       = useState<string | null>(null)
   const [markingProgress, setMarkingProgress] = useState(false)
+  const [timeline, setTimeline] = useState<ProductTimelineEvent[]>([])
+  const [showTimeline, setShowTimeline] = useState(false)
 
   // Report form
   const [conditionConfirmed, setConditionConfirmed]   = useState("")
@@ -255,8 +258,11 @@ function AssignmentPanel({ item, onReported }: {
   const [submitted, setSubmitted]                     = useState(false)
 
   useEffect(() => {
-    verificationAgent.getAssignment(item.id)
-      .then(setDetail)
+    Promise.all([
+      verificationAgent.getAssignment(item.id),
+      verificationAgent.getTimeline(item.id).catch(() => [] as ProductTimelineEvent[]),
+    ])
+      .then(([d, tl]) => { setDetail(d); setTimeline(tl) })
       .catch((e) => setError(e.message ?? "Failed to load assignment"))
       .finally(() => setLoading(false))
   }, [item.id])
@@ -454,6 +460,72 @@ function AssignmentPanel({ item, onReported }: {
       {/* Previous verification cycles */}
       {(detail.previous_cycles?.length ?? 0) > 0 && (
         <PreviousCyclesPanel cycles={detail.previous_cycles} />
+      )}
+
+      {/* Verification timeline */}
+      {timeline.length > 0 && (
+        <div className="px-5 py-3 border-t border-border">
+          <button
+            onClick={() => setShowTimeline(v => !v)}
+            className="flex items-center gap-2 w-full group mb-2"
+          >
+            <Eye className="w-4 h-4 text-ocean" />
+            <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide flex-1 text-left">
+              Full Verification Timeline ({timeline.length} events)
+            </p>
+            {showTimeline
+              ? <ChevronUp className="w-3.5 h-3.5 text-text-secondary" />
+              : <ChevronDown className="w-3.5 h-3.5 text-text-secondary" />}
+          </button>
+
+          {showTimeline && (
+            <div className="bg-white rounded-xl border border-border overflow-hidden mt-2">
+              <div className="relative px-4 py-4 max-h-64 overflow-y-auto">
+                <div className="absolute left-[1.85rem] top-4 bottom-4 w-px bg-border" />
+                <div className="space-y-4">
+                  {timeline.map((ev, i) => (
+                    <div key={i} className="flex items-start gap-3 relative">
+                      <div className={cn(
+                        "w-4 h-4 rounded-full border-2 bg-white flex items-center justify-center shrink-0 mt-0.5 z-10",
+                        ev.new_status === "active"                   ? "border-success"
+                        : ev.new_status === "rejected"               ? "border-danger"
+                        : ev.new_status === "pending_reverification" ? "border-orange-400"
+                        : ev.event_type === "agent_assigned"         ? "border-ocean"
+                        : ev.event_type === "report_submitted"       ? "border-success"
+                        : "border-gray-300"
+                      )}>
+                        <div className={cn("w-1.5 h-1.5 rounded-full",
+                          ev.new_status === "active"                   ? "bg-success"
+                          : ev.new_status === "rejected"               ? "bg-danger"
+                          : ev.new_status === "pending_reverification" ? "bg-orange-400"
+                          : ev.event_type === "agent_assigned"         ? "bg-ocean"
+                          : ev.event_type === "report_submitted"       ? "bg-success"
+                          : "bg-gray-300"
+                        )} />
+                      </div>
+                      <div className="flex-1 min-w-0 pb-1">
+                        <div className="flex items-center justify-between flex-wrap gap-x-2">
+                          <p className="text-xs font-semibold text-text-primary">{ev.label}</p>
+                          <p className="text-[11px] text-text-secondary shrink-0">
+                            {new Date(ev.timestamp).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          </p>
+                        </div>
+                        {ev.detail && <p className="text-[11px] text-text-secondary mt-0.5">{ev.detail}</p>}
+                        {ev.reason && (
+                          <div className="mt-1 p-2 bg-orange-50 border border-orange-200 rounded-lg">
+                            <p className="text-[10px] font-medium text-orange-700 mb-0.5">Admin Note:</p>
+                            <p className="text-[11px] text-text-primary whitespace-pre-line">{ev.reason}</p>
+                          </div>
+                        )}
+                        <p className="text-[10px] text-text-secondary/60 mt-0.5">by {ev.actor}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Existing report */}

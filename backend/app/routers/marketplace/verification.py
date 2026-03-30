@@ -31,6 +31,7 @@ from app.services.marketplace_service import (
     create_attribute,
     get_assignment_detail,
     get_agent_assignments,
+    get_product_timeline,
     list_attributes,
     submit_verification_report,
     update_verification_assignment,
@@ -79,6 +80,29 @@ async def get_assignment(
     current_user: dict = AgentOrAdmin,
 ):
     return await get_assignment_detail(db, assignment_id, current_user)
+
+
+@router.get(
+    "/verification/assignments/{assignment_id}/timeline",
+    summary="Full verification timeline (agent view)",
+    description=(
+        "Returns a unified chronological timeline for the product attached to this assignment. "
+        "Admin names are anonymised; the agent sees 'Admin' instead of the real name."
+    ),
+)
+async def agent_assignment_timeline(
+    assignment_id: UUID,
+    db: DbConn,
+    current_user: dict = AgentOrAdmin,
+) -> list[dict]:
+    row = await db.fetchrow(
+        "SELECT product_id FROM marketplace.verification_assignments WHERE id = $1",
+        assignment_id,
+    )
+    if not row:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Assignment not found.")
+    return await get_product_timeline(db, row["product_id"], viewer_role="agent")
 
 
 @router.patch(
