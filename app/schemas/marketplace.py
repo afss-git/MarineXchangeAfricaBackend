@@ -444,14 +444,19 @@ class VerificationAssignmentResponse(BaseModel):
     id:                 UUID
     product_id:         UUID
     product_title:      str
-    seller_company:     str | None
+    seller_company:     str | None = None
+    seller_name:        str | None = None
+    seller_phone:       str | None = None
+    seller_email:       str | None = None
     agent_id:           UUID
-    assigned_by_name:   str | None
+    assigned_by_name:   str | None = None
     cycle_number:       int
     status:             str
-    scheduled_date:     date | None
-    contact_notes:      str | None
-    created_at:         datetime
+    product_status:     str | None = None
+    full_history_access: bool = False
+    scheduled_date:     date | None = None
+    contact_notes:      str | None = None
+    assigned_at:        datetime
     updated_at:         datetime
     report_submitted:   bool
     # Inlined product fields
@@ -466,6 +471,8 @@ class VerificationAssignmentResponse(BaseModel):
     images:             list[dict] = []
     attribute_values:   list[dict] = []
     report:             VerificationReportOut | None = None
+    evidence_files:     list[dict] = []
+    previous_cycles:    list[dict] = []
 
     model_config = {"from_attributes": True}
 
