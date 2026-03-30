@@ -38,9 +38,11 @@ import {
 import { cn } from "@/lib/utils"
 import {
   seller as sellerApi,
+  marketplace as marketplaceApi,
   type ProductDetail,
   type ProductImage,
   type SellerVerificationStatus,
+  type CategoryResponse,
   ApiRequestError,
 } from "@/lib/api"
 
@@ -290,6 +292,8 @@ export default function EditListingPage() {
   const [currency, setCurrency]         = useState("USD")
   const [locationCountry, setLocationCountry] = useState("")
   const [locationPort, setLocationPort] = useState("")
+  const [categoryId, setCategoryId]     = useState("")
+  const [categories, setCategories]     = useState<CategoryResponse[]>([])
 
   // Action state
   const [isSaving, setIsSaving]         = useState(false)
@@ -323,6 +327,7 @@ export default function EditListingPage() {
       setCurrency(data.currency ?? "USD")
       setLocationCountry(data.location_country ?? "")
       setLocationPort(data.location_port ?? "")
+      setCategoryId(data.category_id ?? "")
     } catch (e) {
       setLoadError(e instanceof ApiRequestError ? e.message : "Failed to load listing.")
     } finally {
@@ -331,6 +336,10 @@ export default function EditListingPage() {
   }, [id])
 
   useEffect(() => { loadListing() }, [loadListing])
+
+  useEffect(() => {
+    marketplaceApi.getCategories().then(setCategories).catch(() => {})
+  }, [])
 
   // Fetch verification details once we know an agent is assigned
   useEffect(() => {
@@ -354,6 +363,7 @@ export default function EditListingPage() {
         asking_price: Number(askingPrice),
         location_country: locationCountry,
         location_port: locationPort,
+        ...(categoryId ? { category_id: categoryId } : {}),
       })
       setListing(updated)
       setSaveMsg({ type: "success", text: "Changes saved successfully." })
@@ -578,14 +588,24 @@ export default function EditListingPage() {
       )}
 
       {status === "pending_reverification" && (
-        <div className="flex items-center gap-3 p-4 bg-orange-50 border border-orange-200 rounded-xl">
-          <RefreshCw className="w-5 h-5 text-orange-500 shrink-0" />
-          <div>
-            <p className="text-sm font-semibold text-text-primary">Corrections requested — please revise and resubmit</p>
-            <p className="text-xs text-text-secondary mt-0.5">
-              The admin has requested changes. Update your listing details and click Resubmit.
-            </p>
+        <div className="p-4 bg-orange-50 border border-orange-200 rounded-xl space-y-2">
+          <div className="flex items-start gap-3">
+            <RefreshCw className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-text-primary">Corrections requested — please revise and resubmit</p>
+              <p className="text-xs text-text-secondary mt-0.5">
+                Review the instructions below, make the required changes, then click <strong>Resubmit</strong>.
+              </p>
+            </div>
           </div>
+          {(listing.corrections_reason || listing.admin_notes) && (
+            <div className="ml-8 p-3 bg-white border border-orange-200 rounded-lg">
+              <p className="text-xs font-semibold text-orange-700 mb-1">Instructions from admin:</p>
+              <p className="text-sm text-text-primary whitespace-pre-line leading-relaxed">
+                {listing.corrections_reason || listing.admin_notes}
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -726,16 +746,31 @@ export default function EditListingPage() {
               </div>
             </div>
 
-            {/* Category (read-only) */}
-            {listing.category_name && (
-              <div className="space-y-1.5">
-                <Label>Category</Label>
-                <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-border text-sm text-text-secondary">
-                  {listing.category_name}
-                  <span className="text-xs ml-auto opacity-60">(contact support to change)</span>
+            {/* Category */}
+            <div className="space-y-1.5">
+              <Label htmlFor="category">Category</Label>
+              {canEdit && categories.length > 0 ? (
+                <Select value={categoryId} onValueChange={setCategoryId}>
+                  <SelectTrigger id="category" className="bg-gray-50/50">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((cat) => [
+                      <SelectItem key={cat.id} value={cat.id} className="font-medium">{cat.name}</SelectItem>,
+                      ...(cat.subcategories ?? []).map((sub) => (
+                        <SelectItem key={sub.id} value={sub.id} className="pl-6 text-text-secondary">
+                          {sub.name}
+                        </SelectItem>
+                      )),
+                    ])}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="px-3 py-2 bg-gray-50 rounded-lg border border-border text-sm text-text-secondary">
+                  {listing.category_name ?? "—"}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {canEdit && (
               <div className="pt-2 flex justify-end">

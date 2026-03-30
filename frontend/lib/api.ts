@@ -106,6 +106,7 @@ export interface ProductDetail {
   submitted_at: string | null
   admin_notes: string | null
   rejection_reason: string | null
+  corrections_reason: string | null
 }
 
 export interface PaginatedProducts {
@@ -506,6 +507,7 @@ export const seller = {
     availability_type: string
     location_country: string
     location_port: string
+    category_id: string
   }>) => request<ProductDetail>(`/marketplace/listings/${id}`, {
     method: "PUT",
     body: JSON.stringify(data),

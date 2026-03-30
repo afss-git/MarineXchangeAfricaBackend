@@ -1918,10 +1918,28 @@ async def admin_product_decision(
     }
     new_status = status_map[payload.decision]
 
-    await db.execute(
-        "UPDATE marketplace.products SET status = $1 WHERE id = $2",
-        new_status, product_id,
-    )
+    # Write status + reason back to the product row so sellers can see it
+    if payload.decision == "reject":
+        await db.execute(
+            """UPDATE marketplace.products
+               SET status = $1, rejection_reason = $2, corrections_reason = NULL, updated_at = NOW()
+               WHERE id = $3""",
+            new_status, payload.reason, product_id,
+        )
+    elif payload.decision == "request_corrections":
+        await db.execute(
+            """UPDATE marketplace.products
+               SET status = $1, corrections_reason = $2, admin_notes = $2, updated_at = NOW()
+               WHERE id = $3""",
+            new_status, payload.reason, product_id,
+        )
+    else:  # approve
+        await db.execute(
+            """UPDATE marketplace.products
+               SET status = $1, updated_at = NOW()
+               WHERE id = $2""",
+            new_status, product_id,
+        )
 
     audit_action = {
         "approve":             AuditAction.PRODUCT_APPROVED,
