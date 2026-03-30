@@ -219,8 +219,8 @@ async def product_activity(
             "action":        r["action"],
             "actor_name":    r["actor_name"],
             "resource_type": r["resource_type"],
-            "old_state":     dict(r["old_state"]) if r["old_state"] else None,
-            "new_state":     dict(r["new_state"]) if r["new_state"] else None,
+            "old_state":     r["old_state"] if isinstance(r["old_state"], dict) else None,
+            "new_state":     r["new_state"] if isinstance(r["new_state"], dict) else None,
             "created_at":    r["created_at"].isoformat() if r["created_at"] else None,
         }
         for r in rows
