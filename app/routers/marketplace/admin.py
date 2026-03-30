@@ -206,8 +206,8 @@ async def product_activity(
             al.created_at,
             COALESCE(p.full_name, au.email, al.actor_id) AS actor_name
         FROM audit.logs al
-        LEFT JOIN public.profiles p  ON p.id  = al.actor_id::uuid
-        LEFT JOIN auth.users     au  ON au.id = al.actor_id::uuid
+        LEFT JOIN public.profiles p  ON al.actor_id IS NOT NULL AND p.id  = al.actor_id::uuid
+        LEFT JOIN auth.users     au  ON al.actor_id IS NOT NULL AND au.id = al.actor_id::uuid
         WHERE al.resource_id = $1
         ORDER BY al.created_at DESC
         LIMIT 50
