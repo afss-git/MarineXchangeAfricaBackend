@@ -1952,9 +1952,9 @@ async def admin_product_decision(
     else:  # approve
         await db.execute(
             """UPDATE marketplace.products
-               SET status = $1, updated_at = NOW()
-               WHERE id = $2""",
-            new_status, product_id,
+               SET status = $1, admin_notes = COALESCE($2, admin_notes), updated_at = NOW()
+               WHERE id = $3""",
+            new_status, payload.admin_notes or payload.reason, product_id,
         )
 
     audit_action = {

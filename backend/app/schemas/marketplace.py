@@ -538,8 +538,9 @@ class AdminProductDecisionRequest(BaseModel):
     """
     model_config = {"extra": "forbid"}
 
-    decision:   str
-    reason:     str | None = Field(default=None, max_length=2000)
+    decision:    str
+    reason:      str | None = Field(default=None, max_length=2000)
+    admin_notes: str | None = Field(default=None, max_length=2000)
 
     @field_validator("decision")
     @classmethod
