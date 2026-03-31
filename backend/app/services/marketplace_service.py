@@ -1101,7 +1101,7 @@ async def upload_product_image(
         await supabase.storage.from_(STORAGE_BUCKET).upload(
             storage_path,
             file_bytes,
-            {"content-type": mime_type},
+            {"content_type": mime_type},
         )
     except Exception as exc:
         logger.error("Storage upload failed for %s: %s", storage_path, exc)
@@ -1273,7 +1273,7 @@ async def upload_product_document(
         await supabase.storage.from_(STORAGE_BUCKET).upload(
             storage_path,
             file_bytes,
-            {"content-type": mime_type},
+            {"content_type": mime_type},
         )
     except Exception as exc:
         logger.error("Document upload failed for %s: %s", storage_path, exc)
@@ -1375,7 +1375,7 @@ async def upload_verification_evidence_file(
     try:
         supabase = await get_supabase_admin_client()
         await supabase.storage.from_(STORAGE_BUCKET).upload(
-            storage_path, file_bytes, {"content-type": mime_type}
+            storage_path, file_bytes, {"content_type": mime_type}
         )
     except Exception as exc:
         logger.error("Evidence upload failed for %s: %s", storage_path, exc)

@@ -1480,7 +1480,7 @@ async def record_payment(
             await sb.storage.from_(PAYMENT_PROOF_BUCKET).upload(
                 storage_path,
                 file_bytes,
-                {"content-type": content_type, "upsert": "true"},
+                {"content_type": content_type, "upsert": "true"},
             )
             proof_path = storage_path
         except Exception as exc:

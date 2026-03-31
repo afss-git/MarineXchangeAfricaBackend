@@ -441,7 +441,7 @@ async def upload_kyc_document(
         await supabase.storage.from_(KYC_BUCKET).upload(
             storage_path,
             file_bytes,
-            {"content-type": mime_type},
+            {"content_type": mime_type},
         )
     except Exception as exc:
         import logging

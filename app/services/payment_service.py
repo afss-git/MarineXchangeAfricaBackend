@@ -690,7 +690,7 @@ async def buyer_upload_evidence(
         await supabase.storage.from_(EVIDENCE_BUCKET).upload(
             path=storage_path,
             file=content,
-            file_options={"content-type": mime, "upsert": "false"},
+            file_options={"content_type": mime, "upsert": "false"},
         )
     except Exception as exc:
         logger.error("Evidence upload failed: %s", exc)

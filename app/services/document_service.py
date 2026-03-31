@@ -196,7 +196,7 @@ async def admin_upload_document(
         await supabase.storage.from_(DOCUMENTS_BUCKET).upload(
             path=storage_path,
             file=content,
-            file_options={"content-type": mime, "upsert": "false"},
+            file_options={"content_type": mime, "upsert": "false"},
         )
     except Exception as exc:
         logger.error("Document upload failed: %s", exc)
@@ -651,7 +651,7 @@ async def admin_generate_invoice(
         await supabase.storage.from_(INVOICES_BUCKET).upload(
             path=pdf_path,
             file=pdf_bytes,
-            file_options={"content-type": "application/pdf", "upsert": "true"},
+            file_options={"content_type": "application/pdf", "upsert": "true"},
         )
     except Exception as exc:
         logger.error("Invoice PDF upload failed: %s", exc)
@@ -770,7 +770,7 @@ async def admin_issue_invoice(
         await supabase.storage.from_(INVOICES_BUCKET).upload(
             path=inv["pdf_path"],
             file=pdf_bytes,
-            file_options={"content-type": "application/pdf", "upsert": "true"},
+            file_options={"content_type": "application/pdf", "upsert": "true"},
         )
     except Exception as exc:
         logger.error("Invoice PDF reupload failed: %s", exc)

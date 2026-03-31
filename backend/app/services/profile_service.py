@@ -181,7 +181,7 @@ async def upload_avatar(
         await supabase.storage.from_(AVATAR_BUCKET).upload(
             path=storage_path,
             file=content,
-            file_options={"content-type": mime, "upsert": "true"},
+            file_options={"content_type": mime, "upsert": "true"},
         )
         # Get public URL (avatars are public so users can see their own photo)
         url_result = await supabase.storage.from_(AVATAR_BUCKET).get_public_url(storage_path)
