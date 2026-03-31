@@ -432,6 +432,7 @@ function ListingDetailPanel({ listing, onActionDone }: { listing: Listing; onAct
   const [showTimeline, setShowTimeline] = useState(false)
   const [lightbox, setLightbox]       = useState<string | null>(null)
   const [activeAction, setActiveAction] = useState<ActionType | null>(null)
+  const [toggling, setToggling]       = useState(false)
 
   const load = useCallback(async () => {
     showLoader()
@@ -484,9 +485,7 @@ function ListingDetailPanel({ listing, onActionDone }: { listing: Listing; onAct
   const canApproveReject    = product.status === "pending_approval"
   const canAssignAgent      = ["pending_verification", "pending_reverification"].includes(product.status)
   const canDelist           = ["active", "under_offer"].includes(product.status)
-  const hasActions          = canApproveReject || canAssignAgent || canDelist
 
-  const [toggling, setToggling] = useState(false)
   async function handleToggleVisibility() {
     setToggling(true)
     try {
