@@ -429,14 +429,40 @@ class SubmitVerificationReportRequest(BaseModel):
 class VerificationReportOut(BaseModel):
     id:                     UUID
     assignment_id:          UUID
-    recommendation:         str
-    condition_confirmed:    str | None
-    price_assessment:       str | None
-    documentation_complete: bool
-    notes:                  str
-    created_at:             datetime
+    outcome:                str                  # verified | failed | requires_clarification
+    recommendation:         str = ""             # computed alias — populated by validator
+    findings:               str                  # agent's inspection notes
+    asset_condition:        str | None = None    # condition_confirmed
+    recommendations:        str | None = None    # price_assessment
+    issues_found:           str | None = None
+    submitted_at:           datetime
+    # Frontend-friendly aliases (None if not mapped)
+    condition_confirmed:    str | None = None
+    price_assessment:       str | None = None
+    documentation_complete: bool = True
+    notes:                  str = ""
+    created_at:             datetime | None = None
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="after")
+    def _populate_aliases(self) -> "VerificationReportOut":
+        _outcome_map = {
+            "verified": "approve",
+            "failed": "reject",
+            "requires_clarification": "request_corrections",
+        }
+        if not self.recommendation:
+            self.recommendation = _outcome_map.get(self.outcome, self.outcome)
+        if self.condition_confirmed is None:
+            self.condition_confirmed = self.asset_condition
+        if self.price_assessment is None:
+            self.price_assessment = self.recommendations
+        if not self.notes:
+            self.notes = self.findings
+        if self.created_at is None:
+            self.created_at = self.submitted_at
+        return self
 
 
 class VerificationAssignmentResponse(BaseModel):
