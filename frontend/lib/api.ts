@@ -393,7 +393,7 @@ export const auth = {
       body: JSON.stringify(data),
     }),
 
-  // Generic login — tries buyer → seller → agent → admin in order
+  // Generic login — tries each portal in order, stops on success or wrong-password (401)
   login: async (data: { email: string; password: string }): Promise<AuthTokenResponse> => {
     const endpoints = [
       "/auth/buyer/login",
@@ -402,17 +402,31 @@ export const auth = {
       "/auth/admin/login",
       "/auth/finance-admin/login",
     ]
-    let lastErr: unknown
+    let wrongPortalErr: unknown  // 403 "wrong portal" — keep trying
     for (const endpoint of endpoints) {
       try {
         return await request<AuthTokenResponse>(endpoint, {
           method: "POST", body: JSON.stringify(data),
         })
       } catch (err) {
-        lastErr = err
+        if (err instanceof ApiRequestError) {
+          // 401 = wrong password — stop immediately, don't try other portals
+          if (err.status === 401) throw err
+          // 403 = wrong portal or unconfirmed email — save and keep trying other portals
+          if (err.status === 403) { wrongPortalErr = err; continue }
+          // 5xx or other — surface immediately with a clean message
+          throw new ApiRequestError("Service unavailable. Please try again in a moment.", 503)
+        }
+        throw err
       }
     }
-    throw lastErr
+    // All portals returned 403 — show a clean generic message instead of the last portal name
+    if (wrongPortalErr instanceof ApiRequestError && wrongPortalErr.status === 403) {
+      const msg = wrongPortalErr.message ?? ""
+      // "email not confirmed" style messages should be shown as-is
+      if (msg.toLowerCase().includes("verify") || msg.toLowerCase().includes("confirm")) throw wrongPortalErr
+    }
+    throw new ApiRequestError("Invalid email or password.", 401)
   },
 
   logout: async (): Promise<MessageResponse> => {
