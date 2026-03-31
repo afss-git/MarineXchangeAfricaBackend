@@ -344,6 +344,9 @@ class ProductDetailResponse(BaseModel):
     submitted_at:            datetime | None = None
     admin_notes:             str | None = None
     rejection_reason:        str | None = None
+    corrections_reason:      str | None = None
+    is_visible:              bool = True
+    admin_edited_at:         datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -552,7 +555,8 @@ class AdminProductDecisionRequest(BaseModel):
 
 class AdminProductUpdateRequest(BaseModel):
     """
-    Admin can edit a listing's core fields after approval.
+    Admin can edit any listing field at any time.
+    Original seller submission is preserved in audit.logs (old_state).
     Agents/admins can also update specs separately via ProductSpecUpdateRequest.
     """
     model_config = {"extra": "forbid"}
@@ -566,6 +570,8 @@ class AdminProductUpdateRequest(BaseModel):
     location_details:   str | None   = Field(default=None, max_length=500)
     availability_type:  str | None   = None
     condition:          str | None   = None
+    category_id:        UUID | None  = None
+    admin_notes:        str | None   = Field(default=None, max_length=2000)
 
     @field_validator("availability_type")
     @classmethod

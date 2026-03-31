@@ -31,6 +31,7 @@ from app.schemas.marketplace import (
 from app.services.marketplace_service import (
     admin_delist_product,
     admin_product_decision,
+    admin_toggle_product_visibility,
     admin_update_product,
     assign_verification_agent,
     get_product_detail,
@@ -242,6 +243,24 @@ async def admin_product_timeline(
     current_user: dict = AdminOnly,
 ) -> list[dict]:
     return await get_product_timeline(db, product_id, viewer_role="admin")
+
+
+@router.patch(
+    "/admin/products/{product_id}/visibility",
+    summary="Show or hide a listing from the public catalog",
+    description=(
+        "Toggles is_visible without changing the product status. "
+        "Hidden products remain accessible to the seller and admin "
+        "but are excluded from the public catalog and search results."
+    ),
+)
+async def toggle_visibility(
+    product_id: UUID,
+    db: DbConn,
+    current_user: dict = AdminOnly,
+    is_visible: bool = Body(..., embed=True),
+):
+    return await admin_toggle_product_visibility(db, product_id, is_visible, current_user)
 
 
 @router.post(

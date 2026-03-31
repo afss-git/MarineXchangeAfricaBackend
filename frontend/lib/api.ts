@@ -2198,8 +2198,10 @@ export interface AdminProductDetail extends AdminProductListItem {
   images: ProductImage[]; attribute_values: ProductAttributeValue[]
   documents: ProductDocument[]
   contact: { contact_name: string | null; phone: string | null; email: string | null } | null
-  admin_notes: string | null; rejection_reason: string | null
+  admin_notes: string | null; rejection_reason: string | null; corrections_reason: string | null
   verification_assignment_id: string | null
+  is_visible: boolean
+  admin_edited_at: string | null
 }
 
 export interface ProductActivityItem {
@@ -2284,6 +2286,12 @@ export const marketplaceAdmin = {
 
   getTimeline: (productId: string) =>
     request<ProductTimelineEvent[]>(`/marketplace/admin/products/${productId}/timeline`),
+
+  toggleVisibility: (productId: string, isVisible: boolean) =>
+    request<{ is_visible: boolean; product_id: string }>(
+      `/marketplace/admin/products/${productId}/visibility`,
+      { method: "PATCH", body: JSON.stringify({ is_visible: isVisible }) },
+    ),
 }
 
 // ── Seller verification status (visible to listing owner) ─────────────────────

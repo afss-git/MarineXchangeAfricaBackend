@@ -486,6 +486,15 @@ function ListingDetailPanel({ listing, onActionDone }: { listing: Listing; onAct
   const canDelist           = ["active", "under_offer"].includes(product.status)
   const hasActions          = canApproveReject || canAssignAgent || canDelist
 
+  const [toggling, setToggling] = useState(false)
+  async function handleToggleVisibility() {
+    setToggling(true)
+    try {
+      await marketplaceAdmin.toggleVisibility(product.id, !product.is_visible)
+      await load()
+    } catch { /* ignore */ } finally { setToggling(false) }
+  }
+
   return (
     <div className="border-t border-border">
 
@@ -503,8 +512,26 @@ function ListingDetailPanel({ listing, onActionDone }: { listing: Listing; onAct
       )}
 
       {/* ── ADMIN CONTROLS ────────────────────────────────────────────────── */}
-      {hasActions && (
-        <div className="px-5 py-4 bg-navy/5 border-b border-border flex items-center gap-3 flex-wrap">
+      <div className="px-5 py-4 bg-navy/5 border-b border-border space-y-3">
+        {/* Badges row */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {product.admin_edited_at && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-600 border border-purple-200">
+              <Wrench className="w-3 h-3" /> Admin Edited {fmtDate(product.admin_edited_at)}
+            </span>
+          )}
+          <span className={cn(
+            "inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border",
+            product.is_visible
+              ? "bg-success/10 text-success border-success/20"
+              : "bg-gray-100 text-gray-500 border-gray-200"
+          )}>
+            {product.is_visible ? "Visible to Buyers" : "Hidden from Buyers"}
+          </span>
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex items-center gap-3 flex-wrap">
           <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider mr-1">Admin Actions:</p>
           {canApproveReject && <>
             <Button size="sm" className="bg-success text-white hover:bg-success/90 gap-1.5" onClick={() => setActiveAction("approve")}>
@@ -522,13 +549,31 @@ function ListingDetailPanel({ listing, onActionDone }: { listing: Listing; onAct
               <UserPlus className="w-3.5 h-3.5" /> Assign Agent
             </Button>
           )}
+          {/* Visibility toggle — always available */}
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={toggling}
+            onClick={handleToggleVisibility}
+            className={cn("gap-1.5", product.is_visible
+              ? "border-gray-300 text-gray-600 hover:bg-gray-50"
+              : "border-ocean text-ocean hover:bg-ocean/5"
+            )}
+          >
+            {toggling
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : product.is_visible
+                ? <><UserX className="w-3.5 h-3.5" /> Hide from Buyers</>
+                : <><UserCheck2 className="w-3.5 h-3.5" /> Make Visible</>
+            }
+          </Button>
           {canDelist && (
             <Button size="sm" variant="outline" className="border-danger text-danger hover:bg-danger/5 gap-1.5" onClick={() => setActiveAction("delist")}>
               <Trash2 className="w-3.5 h-3.5" /> Delist
             </Button>
           )}
         </div>
-      )}
+      </div>
 
       {/* ── 1. PRODUCT OVERVIEW ───────────────────────────────────────────── */}
       <div className="px-5 py-5 bg-gray-50/40 border-b border-border">

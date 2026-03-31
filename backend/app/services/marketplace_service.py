@@ -866,7 +866,7 @@ async def list_public_products(
     page_size = min(page_size, 50)
     offset = (page - 1) * page_size
 
-    conditions = ["p.status = 'active'", "p.deleted_at IS NULL"]
+    conditions = ["p.status = 'active'", "p.deleted_at IS NULL", "p.is_visible = TRUE"]
     params: list[Any] = []
 
     if category_id:
@@ -2165,6 +2165,8 @@ async def admin_update_product(
     if payload.location_details  is not None: updates["location_details"]  = payload.location_details
     if payload.availability_type is not None: updates["availability_type"] = payload.availability_type
     if payload.condition         is not None: updates["condition"]         = payload.condition
+    if payload.category_id       is not None: updates["category_id"]       = payload.category_id
+    if payload.admin_notes       is not None: updates["admin_notes"]       = payload.admin_notes
 
     if not updates:
         raise HTTPException(
@@ -2172,16 +2174,17 @@ async def admin_update_product(
             detail="No fields to update.",
         )
 
-    # Capture original values before overwriting (for audit trail)
+    # Capture original values before overwriting (for audit trail — preserves seller's version)
     from decimal import Decimal
     old_state: dict[str, Any] = {}
     for k in updates:
-        v = product[k]
-        old_state[k] = float(v) if isinstance(v, Decimal) else v
+        if k in product.keys():
+            v = product[k]
+            old_state[k] = float(v) if isinstance(v, Decimal) else (str(v) if hasattr(v, 'hex') else v)
 
     set_clause = ", ".join(f"{k} = ${i+2}" for i, k in enumerate(updates.keys()))
     await db.execute(
-        f"UPDATE marketplace.products SET {set_clause}, updated_at = NOW() WHERE id = $1",
+        f"UPDATE marketplace.products SET {set_clause}, admin_edited_at = NOW(), updated_at = NOW() WHERE id = $1",
         product_id, *updates.values(),
     )
 
@@ -2198,6 +2201,45 @@ async def admin_update_product(
     )
 
     return await get_product_detail(db, product_id, actor, include_contact=True)
+
+
+async def admin_toggle_product_visibility(
+    db: asyncpg.Connection,
+    product_id: uuid.UUID,
+    is_visible: bool,
+    actor: dict,
+) -> dict:
+    """
+    Admin shows or hides a listing from the public catalog without changing its status.
+    is_visible=False → hidden from buyers, still accessible to seller and admin.
+    is_visible=True  → visible again.
+    """
+    admin_id = uuid.UUID(str(actor["id"]))
+
+    product = await db.fetchrow(
+        "SELECT id, status, is_visible FROM marketplace.products WHERE id = $1 AND deleted_at IS NULL",
+        product_id,
+    )
+    _require_product_exists(product, product_id)
+
+    await db.execute(
+        "UPDATE marketplace.products SET is_visible = $1, updated_at = NOW() WHERE id = $2",
+        is_visible, product_id,
+    )
+
+    await write_audit_log(
+        db,
+        actor_id=admin_id,
+        actor_roles=actor.get("roles", []),
+        action=AuditAction.PRODUCT_UPDATED,
+        resource_type="product",
+        resource_id=str(product_id),
+        old_state={"is_visible": product["is_visible"]},
+        new_state={"is_visible": is_visible},
+        metadata={"ip": actor.get("_client_ip")},
+    )
+
+    return {"is_visible": is_visible, "product_id": str(product_id)}
 
 
 async def admin_update_product_specs(
