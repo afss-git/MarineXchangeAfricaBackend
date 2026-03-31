@@ -429,14 +429,15 @@ class SubmitVerificationReportRequest(BaseModel):
 class VerificationReportOut(BaseModel):
     id:                     UUID
     assignment_id:          UUID
-    outcome:                str                  # verified | failed | requires_clarification
-    recommendation:         str = ""             # computed alias — populated by validator
-    findings:               str                  # agent's inspection notes
-    asset_condition:        str | None = None    # condition_confirmed
-    recommendations:        str | None = None    # price_assessment
+    # DB column names (optional — may come pre-aliased from service layer)
+    outcome:                str | None = None
+    findings:               str | None = None
+    asset_condition:        str | None = None
+    recommendations:        str | None = None
     issues_found:           str | None = None
-    submitted_at:           datetime
-    # Frontend-friendly aliases (None if not mapped)
+    submitted_at:           datetime | None = None
+    # Frontend-friendly aliases
+    recommendation:         str = ""
     condition_confirmed:    str | None = None
     price_assessment:       str | None = None
     documentation_complete: bool = True
@@ -452,16 +453,29 @@ class VerificationReportOut(BaseModel):
             "failed": "reject",
             "requires_clarification": "request_corrections",
         }
-        if not self.recommendation:
+        _rec_map = {v: k for k, v in _outcome_map.items()}
+        # DB → aliases
+        if self.outcome and not self.recommendation:
             self.recommendation = _outcome_map.get(self.outcome, self.outcome)
-        if self.condition_confirmed is None:
+        if self.asset_condition and self.condition_confirmed is None:
             self.condition_confirmed = self.asset_condition
-        if self.price_assessment is None:
+        if self.recommendations and self.price_assessment is None:
             self.price_assessment = self.recommendations
-        if not self.notes:
+        if self.findings and not self.notes:
             self.notes = self.findings
-        if self.created_at is None:
+        if self.submitted_at and self.created_at is None:
             self.created_at = self.submitted_at
+        # aliases → DB (when service returns pre-aliased dict)
+        if self.recommendation and not self.outcome:
+            self.outcome = _rec_map.get(self.recommendation, self.recommendation)
+        if self.condition_confirmed and not self.asset_condition:
+            self.asset_condition = self.condition_confirmed
+        if self.price_assessment and not self.recommendations:
+            self.recommendations = self.price_assessment
+        if self.notes and not self.findings:
+            self.findings = self.notes
+        if self.created_at and not self.submitted_at:
+            self.submitted_at = self.created_at
         return self
 
 
