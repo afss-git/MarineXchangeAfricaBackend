@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Query, status
+from fastapi import APIRouter, Body, Depends, File, Query, UploadFile, status
 
 from app.deps import DbConn, require_roles
 from app.schemas.auth import MessageResponse
@@ -26,12 +26,16 @@ from app.schemas.marketplace import (
     AssignVerificationAgentRequest,
     PaginatedProductsResponse,
     ProductDetailResponse,
+    ProductImageResponse,
     ProductSubmitResponse,
 )
 from app.services.marketplace_service import (
     admin_delist_product,
     admin_product_decision,
     admin_toggle_product_visibility,
+    delete_product_image,
+    get_product_snapshot,
+    upload_product_image,
     admin_update_product,
     assign_verification_agent,
     get_product_detail,
@@ -279,3 +283,57 @@ async def delist_product(
     reason: str | None = Body(default=None, embed=True),
 ):
     return await admin_delist_product(db, product_id, reason, current_user)
+
+
+@router.get(
+    "/admin/products/{product_id}/snapshot",
+    summary="Original seller submission snapshot",
+    description=(
+        "Returns the immutable snapshot of the product as the seller originally submitted it. "
+        "This is never modified by admin edits. "
+        "Pass ?cycle=N to retrieve a specific submission cycle."
+    ),
+)
+async def admin_get_snapshot(
+    product_id: UUID,
+    db: DbConn,
+    current_user: dict = AdminOnly,
+    cycle: int | None = Query(default=None, description="Submission cycle number (omit for latest)"),
+) -> dict:
+    snap = await get_product_snapshot(db, product_id, cycle=cycle)
+    if not snap:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="No snapshot found for this product.")
+    return snap
+
+
+@router.post(
+    "/admin/products/{product_id}/images",
+    response_model=ProductImageResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload image to any listing (admin)",
+    description="Admin can upload images to any listing regardless of status.",
+)
+async def admin_upload_image(
+    product_id: UUID,
+    db: DbConn,
+    current_user: dict = AdminOnly,
+    file: UploadFile = File(...),
+):
+    return await upload_product_image(db, product_id, file, current_user)
+
+
+@router.delete(
+    "/admin/products/{product_id}/images/{image_id}",
+    response_model=MessageResponse,
+    summary="Delete image from any listing (admin)",
+    description="Admin can delete images from any listing regardless of status.",
+)
+async def admin_delete_image(
+    product_id: UUID,
+    image_id: UUID,
+    db: DbConn,
+    current_user: dict = AdminOnly,
+):
+    await delete_product_image(db, product_id, image_id, current_user)
+    return MessageResponse(message="Image deleted.")

@@ -288,11 +288,49 @@ export class ApiRequestError extends Error {
   }
 }
 
+// ── Token refresh ─────────────────────────────────────────────────────────────
+
+// "server_down" means the refresh endpoint was unreachable — not a genuine auth failure
+type RefreshResult = true | false | "server_down"
+let _refreshing: Promise<RefreshResult> | null = null
+
+async function tryRefreshToken(): Promise<RefreshResult> {
+  // Deduplicate concurrent refresh attempts
+  if (_refreshing) return _refreshing
+  _refreshing = (async (): Promise<RefreshResult> => {
+    try {
+      const refreshToken = localStorage.getItem("refresh_token")
+      if (!refreshToken) return false
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      })
+      // 401/403 = refresh token definitely expired/invalid
+      // Any other non-ok status = server temporarily down, not a real auth failure
+      if (!res.ok) return res.status === 401 || res.status === 403 ? false : "server_down"
+      const data = await res.json()
+      localStorage.setItem("access_token",      data.access_token)
+      localStorage.setItem("refresh_token",     data.refresh_token)
+      localStorage.setItem("token_expires_at",  String(Date.now() + data.expires_in * 1000))
+      return true
+    } catch {
+      // Network error — server unreachable, not a definitive auth failure
+      return "server_down"
+    } finally {
+      _refreshing = null
+    }
+  })()
+  return _refreshing
+}
+
+
 // ── Fetch wrapper ────────────────────────────────────────────────────────────
 
 async function request<T>(
   path: string,
   options: RequestInit = {},
+  _isRetry = false,
 ): Promise<T> {
   const url = `${API_BASE}${path}`
 
@@ -309,13 +347,24 @@ async function request<T>(
     }
   }
 
-  const res = await fetch(url, {
-    ...options,
-    headers,
-  })
+  const res = await fetch(url, { ...options, headers })
 
   // Handle no-content responses
   if (res.status === 204) return undefined as T
+
+  // Auto-refresh on 401 — but not for auth endpoints or retry loops
+  if (res.status === 401 && !_isRetry && typeof window !== "undefined" && !path.startsWith("/auth/")) {
+    const refreshResult = await tryRefreshToken()
+    if (refreshResult === true) {
+      return request<T>(path, options, true)
+    }
+    if (refreshResult === "server_down") {
+      // Backend is temporarily unreachable — throw 503 so the UI shows "try again"
+      // instead of redirecting to login (the user's session may still be valid)
+      throw new ApiRequestError(503, { detail: "Service temporarily unavailable. Please try again in a moment." })
+    }
+    // refreshResult === false: refresh token genuinely expired — fall through to throw 401
+  }
 
   const body = await res.json().catch(() => null)
 
@@ -327,7 +376,7 @@ async function request<T>(
 }
 
 // Multipart upload helper (no Content-Type header — browser sets boundary)
-async function upload<T>(path: string, formData: FormData): Promise<T> {
+async function upload<T>(path: string, formData: FormData, _isRetry = false): Promise<T> {
   const url = `${API_BASE}${path}`
   const headers: Record<string, string> = {}
   if (typeof window !== "undefined") {
@@ -335,6 +384,15 @@ async function upload<T>(path: string, formData: FormData): Promise<T> {
     if (token) headers["Authorization"] = `Bearer ${token}`
   }
   const res = await fetch(url, { method: "POST", headers, body: formData })
+
+  if (res.status === 401 && !_isRetry && typeof window !== "undefined") {
+    const refreshResult = await tryRefreshToken()
+    if (refreshResult === true) return upload<T>(path, formData, true)
+    if (refreshResult === "server_down") {
+      throw new ApiRequestError(503, { detail: "Service temporarily unavailable. Please try again in a moment." })
+    }
+  }
+
   const body = await res.json().catch(() => null)
   if (!res.ok) throw new ApiRequestError(res.status, body)
   return body as T
@@ -415,7 +473,7 @@ export const auth = {
           // 403 = wrong portal or unconfirmed email — save and keep trying other portals
           if (err.status === 403) { wrongPortalErr = err; continue }
           // 5xx or other — surface immediately with a clean message
-          throw new ApiRequestError("Service unavailable. Please try again in a moment.", 503)
+          throw new ApiRequestError(503, { detail: "Service unavailable. Please try again in a moment." })
         }
         throw err
       }
@@ -426,7 +484,7 @@ export const auth = {
       // "email not confirmed" style messages should be shown as-is
       if (msg.toLowerCase().includes("verify") || msg.toLowerCase().includes("confirm")) throw wrongPortalErr
     }
-    throw new ApiRequestError("Invalid email or password.", 401)
+    throw new ApiRequestError(401, { detail: "Invalid email or password." })
   },
 
   logout: async (): Promise<MessageResponse> => {
@@ -2195,6 +2253,7 @@ export interface AdminProductDetail extends AdminProductListItem {
   location_details: string | null; is_auction: boolean
   seller_phone: string | null; seller_country: string | null
   verification_cycle: number
+  category_id: string | null
   images: ProductImage[]; attribute_values: ProductAttributeValue[]
   documents: ProductDocument[]
   contact: { contact_name: string | null; phone: string | null; email: string | null } | null
@@ -2215,6 +2274,27 @@ export interface ProductActivityItem {
 export interface AdminProductDecision {
   decision: "approve" | "reject" | "request_corrections"
   reason?: string; admin_notes?: string
+}
+
+export interface ProductSnapshot {
+  id: string
+  product_id: string
+  seller_id: string
+  cycle_number: number
+  snapshot_reason: "submitted" | "resubmitted"
+  title: string
+  description: string | null
+  category_id: string | null
+  availability_type: string
+  condition: string
+  asking_price: number
+  currency: string
+  location_country: string
+  location_port: string | null
+  location_details: string | null
+  images: (ProductImage & { signed_url: string })[]
+  attribute_values: { attribute_id: string; attribute_name: string; slug: string; value_text: string | null; value_numeric: string | null; value_boolean: boolean | null }[]
+  snapped_at: string
 }
 
 export interface PaginatedAdminProducts {
@@ -2247,6 +2327,7 @@ export const marketplaceAdmin = {
     currency?: string; condition?: string; availability_type?: string
     location_country?: string; location_port?: string | null
     location_details?: string | null; admin_notes?: string | null
+    category_id?: string | null
   }) => request<AdminProductDetail>(`/marketplace/admin/products/${id}`, {
     method: "PUT", body: JSON.stringify(data),
   }),
@@ -2287,11 +2368,27 @@ export const marketplaceAdmin = {
   getTimeline: (productId: string) =>
     request<ProductTimelineEvent[]>(`/marketplace/admin/products/${productId}/timeline`),
 
+  getSnapshot: (productId: string, cycle?: number) => {
+    const qs = cycle != null ? `?cycle=${cycle}` : ""
+    return request<ProductSnapshot>(`/marketplace/admin/products/${productId}/snapshot${qs}`)
+  },
+
   toggleVisibility: (productId: string, isVisible: boolean) =>
     request<{ is_visible: boolean; product_id: string }>(
       `/marketplace/admin/products/${productId}/visibility`,
       { method: "PATCH", body: JSON.stringify({ is_visible: isVisible }) },
     ),
+
+  uploadImage: (productId: string, file: File) => {
+    const form = new FormData()
+    form.append("file", file)
+    return upload<ProductImage>(`/marketplace/admin/products/${productId}/images`, form)
+  },
+
+  deleteImage: (productId: string, imageId: string) =>
+    request<MessageResponse>(`/marketplace/admin/products/${productId}/images/${imageId}`, {
+      method: "DELETE",
+    }),
 }
 
 // ── Seller verification status (visible to listing owner) ─────────────────────

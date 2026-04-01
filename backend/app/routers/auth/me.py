@@ -6,21 +6,74 @@ GET    /auth/me/roles        — get current user's roles
 PATCH  /auth/me/profile      — update name, phone, company, country
 PATCH  /auth/me/password     — change password (requires current password)
 POST   /auth/me/avatar       — upload profile photo
+POST   /auth/refresh         — exchange refresh_token for new access_token
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from pydantic import BaseModel
 
 from app.deps import CurrentUser, DbConn
 from app.schemas.auth import (
+    AuthTokenResponse,
     ChangePasswordBody,
     UpdateProfileBody,
     UserProfileResponse,
 )
-from app.services.auth_service import build_profile_response
+from app.services.auth_service import build_profile_response, get_supabase_client
 from app.services import profile_service
 
 router = APIRouter(tags=["Auth — Profile"])
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+@router.post(
+    "/refresh",
+    response_model=AuthTokenResponse,
+    summary="Refresh access token",
+    description="Exchange a valid refresh_token for a new access_token + refresh_token pair.",
+)
+async def refresh_token(body: RefreshRequest, db: DbConn) -> AuthTokenResponse:
+    supabase = await get_supabase_client()
+    try:
+        resp = await supabase.auth.refresh_session(body.refresh_token)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token is invalid or expired. Please log in again.",
+        )
+
+    session = resp.session
+    if not session or not session.access_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token is invalid or expired. Please log in again.",
+        )
+
+    user_id = session.user.id
+    from uuid import UUID
+    profile = await db.fetchrow(
+        """
+        SELECT p.*, u.email
+        FROM public.profiles p
+        JOIN auth.users u ON u.id = p.id
+        WHERE p.id = $1
+        """,
+        UUID(str(user_id)),
+    )
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found.")
+
+    return AuthTokenResponse(
+        access_token=session.access_token,
+        refresh_token=session.refresh_token,
+        token_type="bearer",
+        expires_in=session.expires_in or 3600,
+        user=build_profile_response({**dict(profile), "email": session.user.email}),
+    )
 
 
 @router.get(

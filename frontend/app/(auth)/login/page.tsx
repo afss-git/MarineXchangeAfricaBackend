@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Eye, EyeOff, Anchor } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,6 +14,8 @@ import { ApiRequestError } from "@/lib/api"
 
 export default function LoginPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const sessionExpired = searchParams.get("reason") === "session_expired"
   const { login } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -120,6 +122,13 @@ export default function LoginPage() {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Session expired notice */}
+            {sessionExpired && !errors.form && (
+              <div className="p-3 rounded-lg bg-warning/10 border border-warning/20">
+                <p className="text-warning text-sm font-medium">Your session has expired. Please sign in again.</p>
+              </div>
+            )}
+
             {/* Form Error */}
             {errors.form && (
               <div className="p-3 rounded-lg bg-danger/10 border border-danger/20">

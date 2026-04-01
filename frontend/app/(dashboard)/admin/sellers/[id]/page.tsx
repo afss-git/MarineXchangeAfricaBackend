@@ -15,10 +15,11 @@ import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { usePageLoader } from "@/components/page-loader"
 import {
-  adminSellers, admin, marketplaceAdmin, verificationAgent,
+  adminSellers, admin, marketplace, marketplaceAdmin, verificationAgent,
   type AdminSellerDetail, type AdminProductDetail, type VerificationAssignmentDetail,
   type VerificationEvidenceFile, type ProductActivityItem, type ProductDocument,
-  type AdminProductDecision, type ProductTimelineEvent,
+  type AdminProductDecision, type ProductTimelineEvent, type CategoryResponse,
+  type ProductSnapshot,
 } from "@/lib/api"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -288,6 +289,257 @@ function ImageLightbox({ src, onClose }: { src: string; onClose: () => void }) {
 
 type ActionType = "approve" | "reject" | "request_corrections" | "delist" | "assign_agent"
 
+// ── Admin Edit Product Modal ───────────────────────────────────────────────────
+
+function AdminEditModal({
+  product, onDone, onClose,
+}: {
+  product: AdminProductDetail
+  onDone: () => void
+  onClose: () => void
+}) {
+  const [title,            setTitle]            = useState(product.title)
+  const [description,      setDescription]      = useState(product.description ?? "")
+  const [askingPrice,      setAskingPrice]      = useState(String(product.asking_price))
+  const [currency,         setCurrency]         = useState(product.currency)
+  const [condition,        setCondition]        = useState(product.condition)
+  const [availabilityType, setAvailabilityType] = useState(product.availability_type)
+  const [locationCountry,  setLocationCountry]  = useState(product.location_country)
+  const [locationPort,     setLocationPort]     = useState(product.location_port ?? "")
+  const [categoryId,       setCategoryId]       = useState<string>(product.category_id ? String(product.category_id) : "")
+  const [adminNotes,       setAdminNotes]       = useState(product.admin_notes ?? "")
+  const [categories,       setCategories]       = useState<CategoryResponse[]>([])
+  const [images,           setImages]           = useState(product.images ?? [])
+  const [uploading,        setUploading]        = useState(false)
+  const [deletingImg,      setDeletingImg]      = useState<string | null>(null)
+  const [submitting,       setSubmitting]       = useState(false)
+  const [err,              setErr]              = useState<string | null>(null)
+
+  useEffect(() => {
+    marketplace.getCategories()
+      .then(cats => setCategories(cats))
+      .catch(() => {})
+  }, [])
+
+  async function handleUploadImages(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setUploading(true); setErr(null)
+    try {
+      for (const file of Array.from(files)) {
+        const img = await marketplaceAdmin.uploadImage(product.id, file)
+        setImages(prev => [...prev, img])
+      }
+    } catch (e: unknown) {
+      setErr((e as Error)?.message ?? "Image upload failed.")
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  async function handleDeleteImage(imageId: string) {
+    setDeletingImg(imageId)
+    try {
+      await marketplaceAdmin.deleteImage(product.id, imageId)
+      setImages(prev => prev.filter(i => i.id !== imageId))
+    } catch (e: unknown) {
+      setErr((e as Error)?.message ?? "Failed to delete image.")
+    } finally {
+      setDeletingImg(null)
+    }
+  }
+
+  // Flatten category tree for select
+  const flatCats: CategoryResponse[] = []
+  function flatten(cats: CategoryResponse[], depth = 0) {
+    for (const c of cats) {
+      flatCats.push({ ...c, name: (depth > 0 ? "  ".repeat(depth) + "↳ " : "") + c.name })
+      if (c.subcategories?.length) flatten(c.subcategories, depth + 1)
+    }
+  }
+  flatten(categories)
+
+  async function handleSave() {
+    const price = parseFloat(askingPrice)
+    if (!title.trim()) { setErr("Title is required."); return }
+    if (isNaN(price) || price <= 0) { setErr("Enter a valid price."); return }
+    setSubmitting(true); setErr(null)
+    try {
+      await marketplaceAdmin.update(product.id, {
+        title:             title.trim(),
+        description:       description.trim() || null,
+        asking_price:      price,
+        currency,
+        condition,
+        availability_type: availabilityType,
+        location_country:  locationCountry,
+        location_port:     locationPort.trim() || null,
+        ...(categoryId ? { category_id: categoryId } : {}),
+        ...(adminNotes.trim() ? { admin_notes: adminNotes.trim() } : {}),
+      })
+      onDone()
+    } catch (e: unknown) {
+      setErr((e as Error)?.message ?? "Save failed. Please try again.")
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[9997] flex items-center justify-center p-4"
+      style={{ backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)", backgroundColor: "rgba(15,42,68,0.5)" }}
+    >
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between shrink-0">
+          <div>
+            <p className="font-semibold text-text-primary">Edit Listing</p>
+            <p className="text-xs text-text-secondary mt-0.5">Original seller submission is locked in a snapshot — this edits the live listing only</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center">
+            <X className="w-4 h-4 text-text-secondary" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 overflow-y-auto space-y-4">
+
+          <div>
+            <label className="block text-xs font-semibold text-text-secondary mb-1.5">Title <span className="text-danger">*</span></label>
+            <input value={title} onChange={e => setTitle(e.target.value)}
+              className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ocean/30" />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-text-secondary mb-1.5">Description</label>
+            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={4}
+              className="w-full border border-border rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ocean/30" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-text-secondary mb-1.5">Asking Price <span className="text-danger">*</span></label>
+              <input type="number" value={askingPrice} onChange={e => setAskingPrice(e.target.value)} min={0}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ocean/30" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-text-secondary mb-1.5">Currency</label>
+              <select value={currency} onChange={e => setCurrency(e.target.value)}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ocean/30">
+                {["USD","EUR","GBP","NGN","GHS","ZAR","KES","XOF"].map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-text-secondary mb-1.5">Condition</label>
+              <select value={condition} onChange={e => setCondition(e.target.value)}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ocean/30">
+                <option value="new">New</option>
+                <option value="used">Used</option>
+                <option value="refurbished">Refurbished</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-text-secondary mb-1.5">Availability</label>
+              <select value={availabilityType} onChange={e => setAvailabilityType(e.target.value)}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ocean/30">
+                <option value="for_sale">For Sale</option>
+                <option value="hire">Hire</option>
+                <option value="lease">Lease</option>
+                <option value="bareboat_charter">Bareboat Charter</option>
+                <option value="time_charter">Time Charter</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-text-secondary mb-1.5">Country</label>
+              <input value={locationCountry} onChange={e => setLocationCountry(e.target.value)}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ocean/30" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-text-secondary mb-1.5">Port / City</label>
+              <input value={locationPort} onChange={e => setLocationPort(e.target.value)} placeholder="Optional"
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ocean/30" />
+            </div>
+          </div>
+
+          {flatCats.length > 0 && (
+            <div>
+              <label className="block text-xs font-semibold text-text-secondary mb-1.5">Category</label>
+              <select value={categoryId} onChange={e => setCategoryId(e.target.value)}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ocean/30">
+                <option value="">— Unchanged —</option>
+                {flatCats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-semibold text-text-secondary mb-1.5">Admin Notes <span className="text-xs font-normal text-text-secondary">(internal — not shown to seller)</span></label>
+            <textarea value={adminNotes} onChange={e => setAdminNotes(e.target.value)} rows={2} placeholder="Internal notes about this edit…"
+              className="w-full border border-border rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ocean/30" />
+          </div>
+
+          {/* ── Photo management ──────────────────────────────────────── */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-semibold text-text-secondary">Photos ({images.length})</label>
+              <label className={`flex items-center gap-1.5 text-xs font-semibold text-ocean cursor-pointer hover:underline ${uploading ? "opacity-50 pointer-events-none" : ""}`}>
+                {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageIcon className="w-3.5 h-3.5" />}
+                {uploading ? "Uploading…" : "Add Photos"}
+                <input
+                  type="file" accept="image/jpeg,image/png,image/webp" multiple className="sr-only"
+                  onChange={e => handleUploadImages(e.target.files)}
+                  disabled={uploading}
+                />
+              </label>
+            </div>
+            {images.length === 0 ? (
+              <p className="text-xs text-text-secondary italic">No photos yet.</p>
+            ) : (
+              <div className="flex gap-2 flex-wrap">
+                {images.map(img => (
+                  <div key={img.id} className="relative w-20 h-20 rounded-xl overflow-hidden border border-border group shrink-0">
+                    <img src={img.signed_url} alt="" className="w-full h-full object-cover" />
+                    {img.is_primary && (
+                      <span className="absolute bottom-1 left-1 text-[9px] bg-ocean text-white px-1 py-0.5 rounded font-bold">Primary</span>
+                    )}
+                    <button
+                      onClick={() => handleDeleteImage(img.id)}
+                      disabled={deletingImg === img.id}
+                      className="absolute top-1 right-1 w-5 h-5 rounded-full bg-danger text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-danger/90"
+                    >
+                      {deletingImg === img.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {err && (
+            <div className="flex items-center gap-2 text-danger text-sm p-3 bg-danger/5 rounded-lg border border-danger/20">
+              <AlertCircle className="w-4 h-4 shrink-0" />{err}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 pb-5 pt-3 border-t border-border flex gap-3 justify-end shrink-0">
+          <Button variant="outline" size="sm" onClick={onClose} disabled={submitting}>Cancel</Button>
+          <Button size="sm" className="bg-ocean text-white hover:bg-ocean-dark gap-1.5" onClick={handleSave} disabled={submitting}>
+            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wrench className="w-4 h-4" />}
+            {submitting ? "Saving…" : "Save Changes"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function AdminActionModal({
   action, productId, onDone, onClose,
 }: {
@@ -427,29 +679,34 @@ function ListingDetailPanel({ listing, onActionDone }: { listing: Listing; onAct
   const [assignment, setAssignment]   = useState<VerificationAssignmentDetail | null>(null)
   const [activity, setActivity]       = useState<ProductActivityItem[]>([])
   const [timeline, setTimeline]       = useState<ProductTimelineEvent[]>([])
+  const [snapshot, setSnapshot]       = useState<ProductSnapshot | null>(null)
+  const [showSnapshot, setShowSnapshot] = useState(false)
   const [loadErr, setLoadErr]         = useState<string | null>(null)
   const [showActivity, setShowActivity] = useState(false)
   const [showTimeline, setShowTimeline] = useState(false)
   const [lightbox, setLightbox]       = useState<string | null>(null)
   const [activeAction, setActiveAction] = useState<ActionType | null>(null)
   const [toggling, setToggling]       = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
 
   const load = useCallback(async () => {
     showLoader()
     setLoadErr(null)
     try {
-      const [prod, asgn, act, tl] = await Promise.all([
+      const [prod, asgn, act, tl, snap] = await Promise.all([
         marketplaceAdmin.get(listing.id),
         listing.verification_assignment_id
           ? verificationAgent.getAssignment(listing.verification_assignment_id)
           : Promise.resolve(null),
         marketplaceAdmin.getActivity(listing.id),
         marketplaceAdmin.getTimeline(listing.id).catch(() => [] as ProductTimelineEvent[]),
+        marketplaceAdmin.getSnapshot(listing.id).catch(() => null),
       ])
       setProduct(prod)
       setAssignment(asgn)
       setActivity(act)
       setTimeline(tl)
+      setSnapshot(snap)
     } catch (e: unknown) {
       setLoadErr((e as Error)?.message ?? "Failed to load listing details")
     } finally {
@@ -485,6 +742,9 @@ function ListingDetailPanel({ listing, onActionDone }: { listing: Listing; onAct
   const canApproveReject    = product.status === "pending_approval"
   const canAssignAgent      = ["pending_verification", "pending_reverification"].includes(product.status)
   const canDelist           = ["active", "under_offer"].includes(product.status)
+  // Editing is only available AFTER approval — the snapshot is locked at that point
+  // and the live clone is what admin works with from then on
+  const canEdit             = ["active", "approved", "under_offer", "delisted"].includes(product.status)
 
   async function handleToggleVisibility() {
     setToggling(true)
@@ -507,6 +767,15 @@ function ListingDetailPanel({ listing, onActionDone }: { listing: Listing; onAct
           productId={product.id}
           onClose={() => setActiveAction(null)}
           onDone={() => { setActiveAction(null); onActionDone() }}
+        />
+      )}
+
+      {/* Edit modal */}
+      {showEditModal && (
+        <AdminEditModal
+          product={product}
+          onClose={() => setShowEditModal(false)}
+          onDone={() => { setShowEditModal(false); load() }}
         />
       )}
 
@@ -548,8 +817,18 @@ function ListingDetailPanel({ listing, onActionDone }: { listing: Listing; onAct
               <UserPlus className="w-3.5 h-3.5" /> Assign Agent
             </Button>
           )}
-          {/* Visibility toggle — always available */}
-          <Button
+          {/* Edit listing — only available after approval (snapshot is locked by then) */}
+          {canEdit ? (
+            <Button size="sm" variant="outline" className="border-purple-300 text-purple-600 hover:bg-purple-50 gap-1.5" onClick={() => setShowEditModal(true)}>
+              <Wrench className="w-3.5 h-3.5" /> Edit Listing
+            </Button>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-xs text-text-secondary border border-dashed border-gray-300 rounded-lg px-3 py-1.5">
+              <Wrench className="w-3.5 h-3.5" /> Edit available after approval
+            </span>
+          )}
+          {/* Visibility toggle — only relevant once the listing is live */}
+          {canEdit && <Button
             size="sm"
             variant="outline"
             disabled={toggling}
@@ -565,14 +844,103 @@ function ListingDetailPanel({ listing, onActionDone }: { listing: Listing; onAct
                 ? <><UserX className="w-3.5 h-3.5" /> Hide from Buyers</>
                 : <><UserCheck2 className="w-3.5 h-3.5" /> Make Visible</>
             }
-          </Button>
+          </Button>}
           {canDelist && (
             <Button size="sm" variant="outline" className="border-danger text-danger hover:bg-danger/5 gap-1.5" onClick={() => setActiveAction("delist")}>
               <Trash2 className="w-3.5 h-3.5" /> Delist
             </Button>
           )}
+          {/* Original submission snapshot — only show if one exists */}
+          {snapshot && (
+            <Button
+              size="sm" variant="outline"
+              className="border-amber-300 text-amber-700 hover:bg-amber-50 gap-1.5 ml-auto"
+              onClick={() => setShowSnapshot(v => !v)}
+            >
+              <FileCheck className="w-3.5 h-3.5" />
+              {showSnapshot ? "Hide" : "View"} Original Submission
+            </Button>
+          )}
         </div>
       </div>
+
+      {/* ── ORIGINAL SUBMISSION SNAPSHOT ──────────────────────────────────── */}
+      {snapshot && showSnapshot && (
+        <div className="border-b border-amber-200 bg-amber-50/60">
+          <div className="px-5 py-3 flex items-center gap-2 border-b border-amber-200">
+            <FileCheck className="w-4 h-4 text-amber-600" />
+            <p className="text-sm font-bold text-amber-800">Original Seller Submission — Cycle {snapshot.cycle_number}</p>
+            <span className="ml-auto text-xs text-amber-600">Captured {fmtDateTime(snapshot.snapped_at)} · Immutable</span>
+          </div>
+          <div className="px-5 py-5 space-y-5">
+            {/* Core fields diff */}
+            <div>
+              <p className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-3">Product Fields at Submission</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                {[
+                  { label: "Title",        orig: snapshot.title,           live: product.title },
+                  { label: "Price",        orig: `${parseFloat(String(snapshot.asking_price)).toLocaleString()} ${snapshot.currency}`, live: `${parseFloat(String(product.asking_price)).toLocaleString()} ${product.currency}` },
+                  { label: "Condition",    orig: snapshot.condition,       live: product.condition },
+                  { label: "Availability", orig: snapshot.availability_type.replace(/_/g," "), live: product.availability_type.replace(/_/g," ") },
+                  { label: "Country",      orig: snapshot.location_country, live: product.location_country },
+                ].map(({ label, orig, live }) => {
+                  const changed = orig !== live
+                  return (
+                    <div key={label} className={cn("p-2.5 rounded-lg border text-xs", changed ? "bg-amber-100 border-amber-300" : "bg-white border-border")}>
+                      <p className="text-text-secondary mb-0.5">{label}</p>
+                      <p className="font-semibold text-text-primary">{orig}</p>
+                      {changed && <p className="text-amber-700 mt-0.5">→ {live} (edited)</p>}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+            {/* Description */}
+            {snapshot.description && (
+              <div>
+                <p className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-2">Original Description</p>
+                <p className={cn("text-sm leading-relaxed whitespace-pre-line p-3 rounded-lg border",
+                  snapshot.description !== product.description ? "bg-amber-100 border-amber-300" : "bg-white border-border"
+                )}>
+                  {snapshot.description}
+                  {snapshot.description !== product.description && (
+                    <span className="block text-xs text-amber-700 mt-1 font-semibold">↑ This description has been edited by admin</span>
+                  )}
+                </p>
+              </div>
+            )}
+            {/* Original photos */}
+            {snapshot.images.length > 0 && (
+              <div>
+                <p className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-2">Original Photos ({snapshot.images.length})</p>
+                <div className="flex gap-2 flex-wrap">
+                  {snapshot.images.map(img => (
+                    <div key={img.id} className="w-20 h-20 rounded-xl overflow-hidden border border-amber-200 shrink-0">
+                      <img src={img.signed_url} alt="" className="w-full h-full object-cover" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {/* Original specs */}
+            {snapshot.attribute_values.length > 0 && (
+              <div>
+                <p className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-2">Specifications at Submission</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                  {snapshot.attribute_values.map(a => (
+                    <div key={a.attribute_id} className="bg-white border border-border rounded-lg p-2">
+                      <p className="text-[11px] text-text-secondary">{a.attribute_name}</p>
+                      <p className="text-xs font-semibold text-text-primary">
+                        {a.value_text ?? a.value_numeric ?? (a.value_boolean != null ? (a.value_boolean ? "Yes" : "No") : "—")}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── 1. PRODUCT OVERVIEW ───────────────────────────────────────────── */}
       <div className="px-5 py-5 bg-gray-50/40 border-b border-border">

@@ -336,7 +336,6 @@ export default function MarketplacePage() {
                     <div className="flex items-center gap-1 mt-2 text-sm text-text-secondary">
                       <span>{countryFlag(listing.location_country)}</span>
                       <span>{listing.location_country}</span>
-                      {listing.location_port && <span>· {listing.location_port}</span>}
                     </div>
                     <p className="font-semibold text-navy mt-2">
                       ${Number(listing.asking_price).toLocaleString()} {listing.currency}

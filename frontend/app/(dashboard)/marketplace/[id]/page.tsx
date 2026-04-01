@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import {
   ShieldCheck,
@@ -67,6 +67,7 @@ function PageSkeleton() {
 
 export default function AssetDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const router = useRouter()
   const [product, setProduct] = useState<ProductDetail | null>(null)
   const [selectedImage, setSelectedImage] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
@@ -126,8 +127,20 @@ export default function AssetDetailPage() {
       setPrSuccess(true)
       setShowPR(false)
     } catch (e) {
-      const msg = e instanceof ApiRequestError ? e.message : "Failed to submit request."
-      setPrError(msg)
+      if (e instanceof ApiRequestError) {
+        if (e.status === 401) {
+          // Session expired — redirect to login
+          router.push("/login?reason=session_expired")
+          return
+        }
+        if (e.status === 403) {
+          setPrError("You don't have permission to submit a purchase request. Please contact support.")
+          return
+        }
+        setPrError(e.message)
+      } else {
+        setPrError("Failed to submit request. Please try again.")
+      }
     } finally {
       setSubmitting(false)
     }
@@ -149,7 +162,6 @@ export default function AssetDetailPage() {
 
   if (!product) return null
 
-  const primaryImage = product.images.find((i) => i.is_primary) ?? product.images[0]
   const sortedImages = [...product.images].sort((a, b) => a.display_order - b.display_order)
   const sellerInitials = (product.seller_company ?? "??").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
 
@@ -244,7 +256,6 @@ export default function AssetDetailPage() {
               {product.category_name && <Badge variant="secondary">{product.category_name}</Badge>}
               <Badge variant="secondary">
                 {countryFlag(product.location_country)} {product.location_country}
-                {product.location_port ? ` · ${product.location_port}` : ""}
               </Badge>
               <Badge variant="secondary" className="capitalize">{product.condition}</Badge>
               <Badge variant="secondary" className="capitalize">{product.availability_type.replace(/_/g, " ")}</Badge>

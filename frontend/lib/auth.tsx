@@ -9,7 +9,7 @@ import {
   useState,
 } from "react"
 import { useRouter } from "next/navigation"
-import { auth as authApi, type AuthTokenResponse, type UserProfile, ApiRequestError } from "./api"
+import { auth as authApi, type AuthTokenResponse, type UserProfile } from "./api"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,9 +70,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .then((user) => {
         setState({ user, isLoading: false, isAuthenticated: true })
       })
-      .catch(() => {
-        clearTokens()
-        setState({ user: null, isLoading: false, isAuthenticated: false })
+      .catch((err) => {
+        const status = err?.status ?? 0
+        if (status === 401 || status === 403) {
+          // Genuine auth failure — clear tokens and sign out
+          clearTokens()
+          setState({ user: null, isLoading: false, isAuthenticated: false })
+        } else {
+          // Network error (backend down/sleeping) — keep the stored token,
+          // treat the user as authenticated so they aren't kicked to login
+          setState({ user: null, isLoading: false, isAuthenticated: true })
+        }
       })
   }, [])
 

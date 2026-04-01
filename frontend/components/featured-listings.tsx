@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { MapPin, Tag, ArrowRight, Ship, Loader2 } from "lucide-react"
+import { MapPin, Tag, ArrowRight, Ship } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { marketplace, type ProductListItem } from "@/lib/api"
 
@@ -28,7 +28,7 @@ function availabilityLabel(type: string) {
 function ProductCard({ item, index, visible }: { item: ProductListItem; index: number; visible: boolean }) {
   return (
     <Link
-      href="/login"
+      href={`/listings/${item.id}`}
       className={`group bg-white rounded-2xl border border-border overflow-hidden transition-all duration-300 hover:border-ocean hover:-translate-y-1 block ${
         visible ? `animate-fade-up delay-${Math.min(index + 1, 6)}` : "opacity-0"
       }`}
@@ -70,7 +70,7 @@ function ProductCard({ item, index, visible }: { item: ProductListItem; index: n
 
         <div className="flex items-center gap-1.5 text-text-secondary text-xs mb-3">
           <MapPin className="w-3 h-3 shrink-0" />
-          <span>{item.location_country}{item.location_port ? `, ${item.location_port}` : ""}</span>
+          <span>{item.location_country}</span>
           {item.category_name && (
             <>
               <span className="text-border mx-0.5">·</span>
@@ -164,7 +164,7 @@ export function FeaturedListings() {
               Verified, active listings available right now. Sign in to contact sellers or submit an offer.
             </p>
           </div>
-          <Link href="/login">
+          <Link href="/listings">
             <Button
               variant="outline"
               className="border-border text-text-primary hover:bg-white hover:border-ocean transition-all hover:-translate-y-0.5 self-start sm:self-auto"
@@ -194,11 +194,11 @@ export function FeaturedListings() {
         {!isLoading && products.length > 0 && (
           <div className={`mt-12 text-center ${isVisible ? "animate-fade-up" : "opacity-0"}`}>
             <p className="text-text-secondary text-sm mb-4">
-              Showing {products.length} of many active listings. Log in to see the full marketplace.
+              Showing {products.length} featured listings. Browse the full marketplace below.
             </p>
-            <Link href="/signup/buyer">
+            <Link href="/listings">
               <Button className="bg-ocean hover:bg-ocean-dark text-white px-8 py-5 text-sm font-semibold transition-all hover:-translate-y-0.5">
-                Create Free Account to Browse All
+                Browse All Listings
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </Link>

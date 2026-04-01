@@ -13,7 +13,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query
 
-from app.deps import BuyerUser, DbConn, KycBuyer
+from app.deps import BuyerUser, DbConn
 from app.schemas.purchase_requests import (
     PurchaseRequestCreate,
     PurchaseRequestListResponse,
@@ -28,17 +28,18 @@ router = APIRouter(tags=["Purchase Requests — Buyer"])
     "/",
     response_model=PurchaseRequestResponse,
     status_code=201,
-    summary="Submit a purchase request (KYC required)",
+    summary="Submit a purchase request",
 )
 async def submit_purchase_request(
     body: PurchaseRequestCreate,
     db: DbConn,
-    current_user: KycBuyer,
+    current_user: BuyerUser,
 ):
     """
     Submit a purchase request for a live product.
 
-    - KYC must be approved and non-expired.
+    - Any verified buyer account can submit — KYC is not required.
+    - Admin will assign a due-diligence agent to verify the buyer.
     - Only one active request per listing per buyer.
     - purchase_type: `direct_purchase` or `financed`.
     """

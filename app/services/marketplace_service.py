@@ -550,6 +550,130 @@ async def delete_product_draft(
     )
 
 
+async def _take_product_snapshot(
+    db: asyncpg.Connection,
+    product_id: uuid.UUID,
+    seller_id: uuid.UUID,
+    reason: str,  # 'submitted' | 'resubmitted'
+) -> None:
+    """
+    Captures the full product state (fields + image paths + specs) into
+    marketplace.product_snapshots. Called at submit and resubmit time.
+    The snapshot row is immutable — a DB trigger rejects any UPDATE/DELETE.
+    """
+    import json
+    from decimal import Decimal
+
+    product = await db.fetchrow(
+        "SELECT * FROM marketplace.products WHERE id = $1", product_id
+    )
+    if not product:
+        return
+
+    # Fetch image storage paths (not signed URLs — those expire)
+    images = await db.fetch(
+        "SELECT id, storage_path, is_primary, display_order FROM marketplace.product_images WHERE product_id = $1",
+        product_id,
+    )
+    images_json = json.dumps([
+        {"id": str(r["id"]), "storage_path": r["storage_path"],
+         "is_primary": r["is_primary"], "display_order": r["display_order"]}
+        for r in images
+    ])
+
+    # Fetch attribute values
+    attrs = await db.fetch(
+        """
+        SELECT pav.attribute_id, a.name AS attribute_name, a.slug,
+               pav.value_text, pav.value_numeric, pav.value_boolean
+        FROM marketplace.product_attribute_values pav
+        JOIN marketplace.attributes a ON a.id = pav.attribute_id
+        WHERE pav.product_id = $1
+        """,
+        product_id,
+    )
+    attrs_json = json.dumps([
+        {"attribute_id": str(r["attribute_id"]), "attribute_name": r["attribute_name"],
+         "slug": r["slug"], "value_text": r["value_text"],
+         "value_numeric": str(r["value_numeric"]) if r["value_numeric"] is not None else None,
+         "value_boolean": r["value_boolean"]}
+        for r in attrs
+    ])
+
+    cycle = product["verification_cycle"] or 1
+
+    await db.execute(
+        """
+        INSERT INTO marketplace.product_snapshots (
+            product_id, seller_id, cycle_number, snapshot_reason,
+            title, description, category_id, availability_type, condition,
+            asking_price, currency, location_country, location_port, location_details,
+            images, attribute_values
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+        """,
+        product_id,
+        seller_id,
+        cycle,
+        reason,
+        product["title"],
+        product["description"],
+        product["category_id"],
+        product["availability_type"],
+        product["condition"],
+        float(product["asking_price"]) if isinstance(product["asking_price"], Decimal) else product["asking_price"],
+        product["currency"],
+        product["location_country"],
+        product["location_port"],
+        product["location_details"],
+        images_json,
+        attrs_json,
+    )
+
+
+async def get_product_snapshot(
+    db: asyncpg.Connection,
+    product_id: uuid.UUID,
+    cycle: int | None = None,
+) -> dict | None:
+    """
+    Returns the immutable seller submission snapshot for a product.
+    If cycle is None, returns the latest (highest cycle_number).
+    Generates fresh signed URLs for each image storage_path.
+    """
+    import json as _json
+
+    if cycle is not None:
+        row = await db.fetchrow(
+            "SELECT * FROM marketplace.product_snapshots WHERE product_id = $1 AND cycle_number = $2",
+            product_id, cycle,
+        )
+    else:
+        row = await db.fetchrow(
+            "SELECT * FROM marketplace.product_snapshots WHERE product_id = $1 ORDER BY cycle_number DESC LIMIT 1",
+            product_id,
+        )
+
+    if not row:
+        return None
+
+    result = dict(row)
+    result["snapped_at"] = row["snapped_at"].isoformat()
+
+    # Re-generate signed URLs for images
+    raw_images = _json.loads(row["images"]) if isinstance(row["images"], str) else (row["images"] or [])
+    enriched = []
+    for img in raw_images:
+        signed = await _generate_signed_url(img["storage_path"])
+        enriched.append({**img, "signed_url": signed})
+    result["images"] = enriched
+
+    # Parse attribute_values from JSONB
+    raw_attrs = _json.loads(row["attribute_values"]) if isinstance(row["attribute_values"], str) else (row["attribute_values"] or [])
+    result["attribute_values"] = raw_attrs
+
+    return result
+
+
 async def submit_product_for_verification(
     db: asyncpg.Connection,
     product_id: uuid.UUID,
@@ -587,6 +711,7 @@ async def submit_product_for_verification(
         )
 
     old_status = product["status"]
+    snapshot_reason = "resubmitted" if old_status == "pending_reverification" else "submitted"
 
     if old_status == "pending_reverification":
         # Seller addressed corrections — increment cycle and resubmit
@@ -1950,6 +2075,12 @@ async def admin_product_decision(
             new_status, payload.reason, product_id,
         )
     else:  # approve
+        # ── Lock the verified, approved version as an immutable snapshot ──────
+        # This captures the product BEFORE admin can ever edit it.
+        # The snapshot becomes the permanent reference for what was approved.
+        seller_id_val = uuid.UUID(str(product["seller_id"]))
+        await _take_product_snapshot(db, product_id, seller_id_val, "approved")
+
         await db.execute(
             """UPDATE marketplace.products
                SET status = $1, admin_notes = COALESCE($2, admin_notes), updated_at = NOW()
