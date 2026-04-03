@@ -292,6 +292,12 @@ class ChangePasswordBody(BaseModel):
         return v
 
 
+class CreateStaffResponse(BaseModel):
+    """Returned when an admin creates a staff account. Includes the one-time invite link."""
+    profile: "UserProfileResponse"
+    invite_link: str
+
+
 class SetPasswordBody(BaseModel):
     """Set password for first-time login via invite link — no current password required."""
     model_config = {"extra": "forbid"}

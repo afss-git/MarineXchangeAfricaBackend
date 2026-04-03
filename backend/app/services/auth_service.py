@@ -165,7 +165,7 @@ async def create_internal_user(
     created_by: UUID,
     invited_by_name: str,
     request: Request,
-) -> dict:
+) -> tuple[dict, str]:
     """
     Creates an internal user (agent, admin, finance_admin) using the admin client.
     Uses Supabase's invite link flow — no temp password is set.
@@ -236,7 +236,7 @@ async def create_internal_user(
             invited_by_name=invited_by_name,
         )
 
-        return dict(profile)
+        return dict(profile), invite_link
 
     except HTTPException:
         raise

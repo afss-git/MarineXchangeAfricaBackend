@@ -16,6 +16,8 @@ import {
   UserPlus,
   X,
   Loader2,
+  Copy,
+  Check,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -104,13 +106,14 @@ function CreateStaffModal({ onClose, onCreated }: CreateStaffModalProps) {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [inviteLink, setInviteLink] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
 
   const set = (field: string, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }))
     setErrors((prev) => { const n = { ...prev }; delete n[field]; return n })
   }
 
-  // When switching type, reset role to first option
   const switchType = (t: StaffType) => {
     setStaffType(t)
     setForm((prev) => ({
@@ -137,8 +140,9 @@ function CreateStaffModal({ onClose, onCreated }: CreateStaffModalProps) {
     setSubmitting(true)
     setSubmitError(null)
     try {
+      let res
       if (staffType === "agent") {
-        await authAdmin.createAgent({
+        res = await authAdmin.createAgent({
           email: form.email.trim(),
           full_name: form.full_name.trim(),
           agent_type: form.role as "verification_agent" | "buyer_agent",
@@ -146,7 +150,7 @@ function CreateStaffModal({ onClose, onCreated }: CreateStaffModalProps) {
           country: form.country.trim(),
         })
       } else {
-        await authAdmin.createAdmin({
+        res = await authAdmin.createAdmin({
           email: form.email.trim(),
           full_name: form.full_name.trim(),
           role: form.role as "admin" | "finance_admin",
@@ -155,12 +159,19 @@ function CreateStaffModal({ onClose, onCreated }: CreateStaffModalProps) {
         })
       }
       onCreated(`${form.full_name.trim()} created successfully as ${form.role.replace(/_/g, " ")}.`)
-      onClose()
+      setInviteLink(res.invite_link)
     } catch (err) {
       setSubmitError(err instanceof ApiRequestError ? err.message : "Failed to create staff account.")
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const copyLink = async () => {
+    if (!inviteLink) return
+    await navigator.clipboard.writeText(inviteLink)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   const roleOptions = staffType === "agent" ? AGENT_ROLES : ADMIN_ROLES
@@ -171,15 +182,55 @@ function CreateStaffModal({ onClose, onCreated }: CreateStaffModalProps) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <div>
-            <h2 className="text-lg font-semibold text-text-primary">Create Staff Account</h2>
-            <p className="text-sm text-text-secondary mt-0.5">Add a new agent or admin to the platform</p>
+            <h2 className="text-lg font-semibold text-text-primary">
+              {inviteLink ? "Account Created" : "Create Staff Account"}
+            </h2>
+            <p className="text-sm text-text-secondary mt-0.5">
+              {inviteLink ? `${form.full_name.trim()} has been added to the platform` : "Add a new agent or admin to the platform"}
+            </p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
             <X className="w-5 h-5 text-text-secondary" />
           </button>
         </div>
 
-        <div className="p-6 space-y-5">
+        {/* Success — show invite link */}
+        {inviteLink && (
+          <div className="p-6 space-y-5">
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-success/10 border border-success/20">
+              <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
+              <p className="text-sm text-success font-medium">
+                Account created. An invite email has been sent to <strong>{form.email.trim()}</strong>.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-text-primary">Invite link (share manually if needed)</p>
+              <p className="text-xs text-text-secondary">This link lets the staff member set their password. It expires after 24 hours.</p>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 px-3 py-2 rounded-lg bg-gray-50 border border-border text-xs font-mono text-text-secondary truncate select-all">
+                  {inviteLink}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={copyLink}
+                  className="shrink-0 gap-1.5"
+                >
+                  {copied ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copied ? "Copied!" : "Copy"}
+                </Button>
+              </div>
+            </div>
+
+            <Button onClick={onClose} className="w-full bg-ocean hover:bg-ocean/90 text-white">
+              Done
+            </Button>
+          </div>
+        )}
+
+        {/* Form */}
+        {!inviteLink && <div className="p-6 space-y-5">
           {/* Invite info banner */}
           <div className="flex items-start gap-2.5 p-3 rounded-lg bg-ocean/5 border border-ocean/20 text-sm text-ocean">
             <svg className="w-4 h-4 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -301,7 +352,7 @@ function CreateStaffModal({ onClose, onCreated }: CreateStaffModalProps) {
               {submitting ? "Creating…" : "Create Account"}
             </Button>
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   )

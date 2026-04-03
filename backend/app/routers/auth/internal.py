@@ -26,6 +26,7 @@ from app.schemas.auth import (
     BootstrapAdminRequest,
     CreateAdminRequest,
     CreateAgentRequest,
+    CreateStaffResponse,
     LoginRequest,
     MessageResponse,
     UserProfileResponse,
@@ -235,13 +236,12 @@ async def agent_logout(
 
 @router.post(
     "/internal/create-agent",
-    response_model=UserProfileResponse,
+    response_model=CreateStaffResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create agent account [Admin only]",
     description=(
         "Creates a verification_agent or buyer_agent account. "
-        "A temporary password is generated and sent to the agent's email. "
-        "Agent must change password on first login."
+        "Returns the profile and a one-time invite link for the staff member to set their password."
     ),
 )
 async def create_agent(
@@ -250,7 +250,7 @@ async def create_agent(
     request: Request,
     db: DbConn,
 ):
-    profile = await create_internal_user(
+    profile, invite_link = await create_internal_user(
         db=db,
         email=payload.email,
         full_name=payload.full_name,
@@ -278,18 +278,17 @@ async def create_agent(
         },
     )
 
-    return build_profile_response(profile)
+    return CreateStaffResponse(profile=build_profile_response(profile), invite_link=invite_link)
 
 
 @router.post(
     "/internal/create-admin",
-    response_model=UserProfileResponse,
+    response_model=CreateStaffResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create admin or finance_admin account [Admin only]",
     description=(
         "Creates an admin or finance_admin account. "
-        "Only existing admins can create new admin accounts. "
-        "This action is fully audited."
+        "Returns the profile and a one-time invite link for the staff member to set their password."
     ),
 )
 async def create_admin_user(
@@ -298,7 +297,7 @@ async def create_admin_user(
     request: Request,
     db: DbConn,
 ):
-    profile = await create_internal_user(
+    profile, invite_link = await create_internal_user(
         db=db,
         email=payload.email,
         full_name=payload.full_name,
@@ -327,6 +326,6 @@ async def create_admin_user(
         },
     )
 
-    return build_profile_response(profile)
+    return CreateStaffResponse(profile=build_profile_response(profile), invite_link=invite_link)
 
 
