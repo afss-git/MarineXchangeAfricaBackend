@@ -12,8 +12,6 @@ POST /auth/internal/create-admin        — admin creates admin/finance-admin ac
 """
 from __future__ import annotations
 
-import secrets
-import string
 from typing import Annotated
 from uuid import UUID
 
@@ -252,12 +250,9 @@ async def create_agent(
     request: Request,
     db: DbConn,
 ):
-    temp_password = _generate_temp_password()
-
     profile = await create_internal_user(
         db=db,
         email=payload.email,
-        temp_password=temp_password,
         full_name=payload.full_name,
         company_name=None,
         company_reg_no=None,
@@ -265,6 +260,7 @@ async def create_agent(
         country=payload.country,
         roles=[payload.agent_type],
         created_by=UUID(str(current_user["id"])),
+        invited_by_name=current_user.get("full_name") or "MarineXchange Admin",
         request=request,
     )
 
@@ -302,12 +298,9 @@ async def create_admin_user(
     request: Request,
     db: DbConn,
 ):
-    temp_password = _generate_temp_password()
-
     profile = await create_internal_user(
         db=db,
         email=payload.email,
-        temp_password=temp_password,
         full_name=payload.full_name,
         company_name=None,
         company_reg_no=None,
@@ -315,6 +308,7 @@ async def create_admin_user(
         country=payload.country,
         roles=[payload.role],
         created_by=UUID(str(current_user["id"])),
+        invited_by_name=current_user.get("full_name") or "MarineXchange Admin",
         request=request,
     )
 
@@ -336,21 +330,3 @@ async def create_admin_user(
     return build_profile_response(profile)
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _generate_temp_password(length: int = 20) -> str:
-    """
-    Generates a cryptographically secure temporary password.
-    Satisfies the platform's password policy (upper, lower, digit, special).
-    """
-    alphabet = string.ascii_letters + string.digits + "!@#$%^&*()"
-    while True:
-        pwd = "".join(secrets.choice(alphabet) for _ in range(length))
-        # Ensure policy compliance
-        if (
-            any(c.isupper() for c in pwd)
-            and any(c.islower() for c in pwd)
-            and any(c.isdigit() for c in pwd)
-            and any(c in "!@#$%^&*()" for c in pwd)
-        ):
-            return pwd

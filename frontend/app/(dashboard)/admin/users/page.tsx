@@ -96,11 +96,9 @@ function CreateStaffModal({ onClose, onCreated }: CreateStaffModalProps) {
   const [staffType, setStaffType] = useState<StaffType>("agent")
   const [form, setForm] = useState({
     email: "",
-    password: "",
     full_name: "",
     role: "verification_agent",
     phone: "",
-    company_name: "",
     country: "",
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -126,9 +124,10 @@ function CreateStaffModal({ onClose, onCreated }: CreateStaffModalProps) {
   const validate = () => {
     const e: Record<string, string> = {}
     if (!form.email.includes("@")) e.email = "Valid email required"
-    if (form.password.length < 8) e.password = "At least 8 characters"
     if (!form.full_name.trim()) e.full_name = "Full name required"
     if (!form.role) e.role = "Role required"
+    if (!form.phone.trim()) e.phone = "Phone required"
+    if (!form.country.trim()) e.country = "Country required"
     return e
   }
 
@@ -138,19 +137,22 @@ function CreateStaffModal({ onClose, onCreated }: CreateStaffModalProps) {
     setSubmitting(true)
     setSubmitError(null)
     try {
-      const payload = {
-        email: form.email.trim(),
-        password: form.password,
-        full_name: form.full_name.trim(),
-        role: form.role as never,
-        phone: form.phone.trim() || undefined,
-        country: form.country.trim() || undefined,
-        ...(staffType === "agent" ? { company_name: form.company_name.trim() || undefined } : {}),
-      }
       if (staffType === "agent") {
-        await authAdmin.createAgent(payload as Parameters<typeof authAdmin.createAgent>[0])
+        await authAdmin.createAgent({
+          email: form.email.trim(),
+          full_name: form.full_name.trim(),
+          agent_type: form.role as "verification_agent" | "buyer_agent",
+          phone: form.phone.trim(),
+          country: form.country.trim(),
+        })
       } else {
-        await authAdmin.createAdmin(payload as Parameters<typeof authAdmin.createAdmin>[0])
+        await authAdmin.createAdmin({
+          email: form.email.trim(),
+          full_name: form.full_name.trim(),
+          role: form.role as "admin" | "finance_admin",
+          phone: form.phone.trim(),
+          country: form.country.trim(),
+        })
       }
       onCreated(`${form.full_name.trim()} created successfully as ${form.role.replace(/_/g, " ")}.`)
       onClose()
@@ -178,6 +180,16 @@ function CreateStaffModal({ onClose, onCreated }: CreateStaffModalProps) {
         </div>
 
         <div className="p-6 space-y-5">
+          {/* Invite info banner */}
+          <div className="flex items-start gap-2.5 p-3 rounded-lg bg-ocean/5 border border-ocean/20 text-sm text-ocean">
+            <svg className="w-4 h-4 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            <span>
+              A secure setup link will be emailed to the staff member. They will use it to create their own password before logging in.
+            </span>
+          </div>
+
           {/* Type toggle */}
           <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-xl">
             {(["agent", "admin"] as StaffType[]).map((t) => (
@@ -245,56 +257,30 @@ function CreateStaffModal({ onClose, onCreated }: CreateStaffModalProps) {
             {errors.email && <p className="text-xs text-danger">{errors.email}</p>}
           </div>
 
-          {/* Password */}
-          <div className="space-y-1.5">
-            <Label htmlFor="cs-pwd" className="text-sm font-medium text-text-primary">Temporary Password *</Label>
-            <Input
-              id="cs-pwd"
-              type="password"
-              placeholder="Min. 8 characters"
-              value={form.password}
-              onChange={(e) => set("password", e.target.value)}
-              className={cn("bg-white", errors.password && "border-danger focus-visible:ring-danger/20")}
-            />
-            {errors.password && <p className="text-xs text-danger">{errors.password}</p>}
-          </div>
-
           {/* Phone */}
           <div className="space-y-1.5">
-            <Label htmlFor="cs-phone" className="text-sm font-medium text-text-primary">Phone <span className="text-text-secondary font-normal">(optional)</span></Label>
+            <Label htmlFor="cs-phone" className="text-sm font-medium text-text-primary">Phone *</Label>
             <Input
               id="cs-phone"
               placeholder="+234 800 000 0000"
               value={form.phone}
               onChange={(e) => set("phone", e.target.value)}
-              className="bg-white"
+              className={cn("bg-white", errors.phone && "border-danger focus-visible:ring-danger/20")}
             />
+            {errors.phone && <p className="text-xs text-danger">{errors.phone}</p>}
           </div>
-
-          {/* Company (agents only) */}
-          {staffType === "agent" && (
-            <div className="space-y-1.5">
-              <Label htmlFor="cs-company" className="text-sm font-medium text-text-primary">Company <span className="text-text-secondary font-normal">(optional)</span></Label>
-              <Input
-                id="cs-company"
-                placeholder="Agency or firm name"
-                value={form.company_name}
-                onChange={(e) => set("company_name", e.target.value)}
-                className="bg-white"
-              />
-            </div>
-          )}
 
           {/* Country */}
           <div className="space-y-1.5">
-            <Label htmlFor="cs-country" className="text-sm font-medium text-text-primary">Country <span className="text-text-secondary font-normal">(optional)</span></Label>
+            <Label htmlFor="cs-country" className="text-sm font-medium text-text-primary">Country *</Label>
             <Input
               id="cs-country"
               placeholder="e.g. Nigeria"
               value={form.country}
               onChange={(e) => set("country", e.target.value)}
-              className="bg-white"
+              className={cn("bg-white", errors.country && "border-danger focus-visible:ring-danger/20")}
             />
+            {errors.country && <p className="text-xs text-danger">{errors.country}</p>}
           </div>
 
           {/* Submit error */}

@@ -16,6 +16,7 @@ from uuid import UUID
 
 import asyncpg
 from fastapi import HTTPException, Request, status
+from gotrue.errors import AuthApiError
 from supabase import AClient, acreate_client
 
 from app.config import settings
@@ -155,7 +156,6 @@ async def create_internal_user(
     *,
     db: asyncpg.Connection,
     email: str,
-    temp_password: str,
     full_name: str,
     company_name: str | None,
     company_reg_no: str | None,
@@ -163,44 +163,59 @@ async def create_internal_user(
     country: str,
     roles: list[str],
     created_by: UUID,
+    invited_by_name: str,
     request: Request,
 ) -> dict:
     """
     Creates an internal user (agent, admin, finance_admin) using the admin client.
-    Skips email confirmation — admin provisions these accounts directly.
-    Sends a temporary password that must be changed on first login.
+    Uses Supabase's invite link flow — no temp password is set.
+    The staff member receives a one-time link via Resend to set their own password.
     """
+    from app.services.notification_service import send_staff_welcome
+
     admin_client = await get_supabase_admin_client()
     auth_user_id: str | None = None
 
+    ROLE_LABELS = {
+        "verification_agent": "Verification Agent",
+        "buyer_agent": "KYC Agent",
+        "admin": "Administrator",
+        "finance_admin": "Finance Administrator",
+    }
+    role_label = ROLE_LABELS.get(roles[0], roles[0].replace("_", " ").title())
+    redirect_to = f"{settings.FRONTEND_URL}/auth/set-password"
+
     try:
-        # Use admin API to create user (bypasses email confirmation)
-        auth_response = await admin_client.auth.admin.create_user({
+        # generate_link(type="invite") creates the auth user AND returns a one-time
+        # invite link. The user clicks it to set their password — no temp password needed.
+        link_response = await admin_client.auth.admin.generate_link({
+            "type": "invite",
             "email": email.lower().strip(),
-            "password": temp_password,
-            "email_confirm": True,   # admin-confirmed, no email verification needed
-            "user_metadata": {
-                "full_name": full_name,
-                "roles": roles,
-                "created_by": str(created_by),
-                "requires_password_change": True,
+            "options": {
+                "redirect_to": redirect_to,
+                "data": {
+                    "full_name": full_name,
+                    "roles": roles,
+                    "created_by": str(created_by),
+                },
             },
         })
 
-        if not auth_response.user:
+        if not link_response.user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Internal user creation failed.",
             )
 
-        auth_user_id = str(auth_response.user.id)
+        auth_user_id = str(link_response.user.id)
+        invite_link: str = link_response.properties.action_link
 
         profile = await db.fetchrow(
             """
             INSERT INTO public.profiles
                 (id, full_name, company_name, company_reg_no, phone, country,
                  roles, kyc_status, is_active)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, 'not_applicable', true)
+            VALUES ($1, $2, $3, $4, $5, $6, $7::text[], 'not_applicable', true)
             RETURNING *
             """,
             UUID(auth_user_id),
@@ -212,13 +227,33 @@ async def create_internal_user(
             roles,
         )
 
-        # TODO: send welcome email with temp password via Resend
-        # await notification_service.send_agent_welcome(email, temp_password)
+        # Send invite email via Resend — fire-and-forget (failure doesn't block creation)
+        await send_staff_welcome(
+            staff_email=email.lower().strip(),
+            staff_name=full_name,
+            role_label=role_label,
+            invite_link=invite_link,
+            invited_by_name=invited_by_name,
+        )
 
         return dict(profile)
 
     except HTTPException:
         raise
+
+    except AuthApiError as exc:
+        logger.error("Supabase auth error creating user %s: %s", email, exc)
+        await _cleanup_orphan_auth_user(auth_user_id, use_admin=True)
+        # Supabase returns "User already registered" when email exists in auth
+        if "already registered" in str(exc).lower() or "already exists" in str(exc).lower():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An account with this email address already exists.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Auth provider error: {exc}",
+        )
 
     except asyncpg.UniqueViolationError:
         await _cleanup_orphan_auth_user(auth_user_id, use_admin=True)
@@ -228,11 +263,11 @@ async def create_internal_user(
         )
 
     except Exception as exc:
-        logger.error("Internal user creation failed for %s: %s", email, exc)
+        logger.error("Internal user creation failed for %s: %r", email, exc, exc_info=True)
         await _cleanup_orphan_auth_user(auth_user_id, use_admin=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="User creation failed. Please try again.",
+            detail=f"User creation failed: {type(exc).__name__}: {exc}",
         )
 
 

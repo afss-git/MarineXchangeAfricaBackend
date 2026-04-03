@@ -552,6 +552,47 @@ async def send_kyc_expiry_warning(
     )
 
 
+# ── Staff Invite ──────────────────────────────────────────────────────────────
+
+async def send_staff_welcome(
+    staff_email: str,
+    staff_name: str,
+    role_label: str,
+    invite_link: str,
+    invited_by_name: str,
+) -> None:
+    """
+    Sent to a newly created staff account (agent or admin).
+    Contains a one-time invite link to set their password.
+    The link expires after 24 hours.
+    """
+    await _send(
+        to=staff_email,
+        subject="You've been invited to MarineXchange Africa",
+        html=f"""
+        <p>Dear {staff_name},</p>
+        <p>You have been invited to join <strong>MarineXchange Africa</strong> as a
+        <strong>{role_label}</strong> by {invited_by_name}.</p>
+        <p>Click the button below to set your password and activate your account.
+        This link is valid for <strong>24 hours</strong>.</p>
+        <p style="margin:32px 0;">
+            <a href="{invite_link}"
+               style="background:#0057A8;color:#ffffff;padding:12px 28px;border-radius:6px;
+                      text-decoration:none;font-weight:600;display:inline-block;">
+                Set Your Password
+            </a>
+        </p>
+        <p>If the button does not work, copy and paste this link into your browser:</p>
+        <p style="font-family:monospace;word-break:break-all;font-size:13px;">{invite_link}</p>
+        <p>If you did not expect this invitation, please ignore this email or contact
+        our support team.</p>
+        <br/>
+        <p>Best regards,<br/><strong>MarineXchange Africa</strong></p>
+        """,
+        tags=[{"name": "category", "value": "staff_invite"}],
+    )
+
+
 # ── Purchase Request notification functions ───────────────────────────────────
 
 async def notify_admin_new_purchase_request(

@@ -1338,6 +1338,12 @@ export const profile = {
     body: JSON.stringify(data),
   }),
 
+  setPassword: (data: { new_password: string }) =>
+    request<MessageResponse>("/auth/me/set-password", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
   uploadAvatar: (formData: FormData) =>
     upload<UserProfile>("/auth/me/avatar", formData),
 }
@@ -2200,17 +2206,17 @@ export const authAdmin = {
     request<MessageResponse>("/auth/admin/logout", { method: "POST" }),
 
   createAgent: (data: {
-    email: string; password: string; full_name: string
-    role: "verification_agent" | "buyer_agent"
-    phone?: string; company_name?: string; country?: string
+    email: string; full_name: string
+    agent_type: "verification_agent" | "buyer_agent"
+    phone: string; country: string
   }) => request<UserProfile>("/auth/internal/create-agent", {
     method: "POST", body: JSON.stringify(data),
   }),
 
   createAdmin: (data: {
-    email: string; password: string; full_name: string
+    email: string; full_name: string
     role: "admin" | "finance_admin"
-    phone?: string; country?: string
+    phone: string; country: string
   }) => request<UserProfile>("/auth/internal/create-admin", {
     method: "POST", body: JSON.stringify(data),
   }),
@@ -2569,38 +2575,72 @@ export const kycAgent = {
 
 // ── Purchase Requests Admin types ─────────────────────────────────────────────
 
-export interface PurchaseRequestAdminItem {
-  id: string; buyer_id: string; buyer_name: string | null
-  buyer_company: string | null; product_id: string | null
-  product_title: string | null; status: string
-  request_type: string; budget_min: number | null; budget_max: number | null
-  currency: string; description: string; assigned_agent: string | null
-  created_at: string; updated_at: string
-}
-
-export interface PurchaseRequestAdminDetail extends PurchaseRequestAdminItem {
-  buyer_email: string | null; buyer_phone: string | null
-  preferred_delivery_date: string | null; additional_requirements: string | null
-  rejection_reason: string | null; agent_report: AgentReportDetail | null
-  deal_id: string | null
-}
-
-export interface AgentReportDetail {
+export interface AgentAssignmentInfo {
   id: string; agent_id: string; agent_name: string | null
-  financial_capacity_usd: number; risk_rating: "low" | "medium" | "high"
-  recommendation: "recommend_approve" | "recommend_reject"
-  verification_notes: string; submitted_at: string
+  status: string; notes: string | null; created_at: string
 }
 
+export interface AgentReportInfo {
+  id: string; agent_id: string; agent_name: string | null
+  financial_capacity_usd: string; risk_rating: "low" | "medium" | "high"
+  recommendation: "recommend_approve" | "recommend_reject"
+  verification_notes: string; created_at: string
+}
+
+export interface PurchaseRequestAdminDetail {
+  id: string
+  product_id: string | null
+  product_title: string | null
+  // Enriched product fields
+  product_asking_price: string | null
+  product_currency: string | null
+  product_condition: string | null
+  product_availability_type: string | null
+  product_location_country: string | null
+  product_location_port: string | null
+  product_primary_image_url: string | null
+  seller_company: string | null
+  buyer_id: string
+  buyer_name: string | null
+  buyer_email: string | null
+  // Enriched buyer fields
+  buyer_phone: string | null
+  buyer_company_name: string | null
+  buyer_kyc_status: string | null
+  buyer_country: string | null
+  purchase_type: string
+  quantity: number
+  offered_price: string | null
+  offered_currency: string
+  message: string | null
+  status: string
+  admin_notes: string | null
+  admin_bypass_reason: string | null
+  cancelled_reason: string | null
+  converted_deal_id: string | null
+  reviewed_by: string | null
+  reviewed_at: string | null
+  agent_assignment: AgentAssignmentInfo | null
+  agent_report: AgentReportInfo | null
+  created_at: string
+  updated_at: string
+}
+
+// List response — backend returns all items + total (no server-side pagination)
 export interface PaginatedPurchaseRequestsAdmin {
-  items: PurchaseRequestAdminItem[]
-  total: number; page: number; page_size: number; pages: number
+  items: PurchaseRequestAdminDetail[]
+  total: number
+}
+
+export interface ConvertToDealResponse {
+  deal_id: string; deal_ref: string; deal_status: string
+  request_id: string; message: string
 }
 
 // ── Purchase Requests Admin module ────────────────────────────────────────────
 
 export const prAdmin = {
-  list: (params?: { page?: number; page_size?: number; status?: string; buyer_id?: string }) => {
+  list: (params?: { status?: string; buyer_id?: string }) => {
     const qs = new URLSearchParams()
     if (params) Object.entries(params).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== "") qs.set(k, String(v))
@@ -2612,27 +2652,28 @@ export const prAdmin = {
   get: (id: string) =>
     request<PurchaseRequestAdminDetail>(`/purchase-requests/admin/${id}`),
 
-  assignAgent: (id: string, agentId: string) =>
-    request<MessageResponse>(`/purchase-requests/admin/${id}/assign-agent`, {
-      method: "POST", body: JSON.stringify({ agent_id: agentId }),
+  assignAgent: (id: string, agentId: string, notes?: string) =>
+    request<PurchaseRequestAdminDetail>(`/purchase-requests/admin/${id}/assign-agent`, {
+      method: "POST", body: JSON.stringify({ agent_id: agentId, notes: notes ?? null }),
     }),
 
-  approve: (id: string, notes?: string) =>
-    request<MessageResponse>(`/purchase-requests/admin/${id}/approve`, {
-      method: "POST", body: JSON.stringify({ notes: notes ?? null }),
+  approve: (id: string, adminNotes?: string, bypassReason?: string) =>
+    request<PurchaseRequestAdminDetail>(`/purchase-requests/admin/${id}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ admin_notes: adminNotes ?? null, admin_bypass_reason: bypassReason ?? null }),
     }),
 
-  reject: (id: string, reason: string) =>
-    request<MessageResponse>(`/purchase-requests/admin/${id}/reject`, {
-      method: "POST", body: JSON.stringify({ reason }),
+  reject: (id: string, adminNotes: string) =>
+    request<PurchaseRequestAdminDetail>(`/purchase-requests/admin/${id}/reject`, {
+      method: "POST", body: JSON.stringify({ admin_notes: adminNotes }),
     }),
 
   convert: (id: string, data: {
-    total_price: number; currency: string; deal_type: "full_payment" | "financing"
-    payment_account_id?: string; admin_notes?: string
-    duration_months?: number; initial_payment_percent?: number
-    rate_schedule_id?: string
-  }) => request<MessageResponse>(`/purchase-requests/admin/${id}/convert`, {
+    deal_type: "full_payment" | "financing"
+    agreed_price: number
+    currency: string
+    admin_notes?: string
+  }) => request<ConvertToDealResponse>(`/purchase-requests/admin/${id}/convert`, {
     method: "POST", body: JSON.stringify(data),
   }),
 }
@@ -2650,7 +2691,7 @@ export interface AgentAssignedPRDetail extends AgentAssignedPRItem {
   description: string; additional_requirements: string | null
   preferred_delivery_date: string | null
   buyer_email: string | null; buyer_phone: string | null
-  my_report: AgentReportDetail | null
+  my_report: AgentReportInfo | null
 }
 
 // ── Purchase Requests Agent module ────────────────────────────────────────────
@@ -2667,7 +2708,7 @@ export const prAgent = {
     risk_rating: "low" | "medium" | "high"
     recommendation: "recommend_approve" | "recommend_reject"
     verification_notes: string
-  }) => request<AgentReportDetail>(`/purchase-requests/agent/${id}/report`, {
+  }) => request<AgentReportInfo>(`/purchase-requests/agent/${id}/report`, {
     method: "POST", body: JSON.stringify(data),
   }),
 }
