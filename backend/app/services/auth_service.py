@@ -168,9 +168,12 @@ async def create_internal_user(
 ) -> tuple[dict, str, bool]:
     """
     Creates an internal user (agent, admin, finance_admin) using the admin client.
-    Uses Supabase's invite link flow — no temp password is set.
-    The staff member receives a one-time link via Resend to set their own password.
+    A secure temporary password is generated and emailed to the staff member.
+    The admin also sees the password in the modal so they can share it manually.
+    Staff must change their password after first login.
     """
+    import secrets
+    import string
     from app.services.notification_service import send_staff_welcome
 
     admin_client = await get_supabase_admin_client()
@@ -183,15 +186,22 @@ async def create_internal_user(
         "finance_admin": "Finance Administrator",
     }
     role_label = ROLE_LABELS.get(roles[0], roles[0].replace("_", " ").title())
-    redirect_to = f"{settings.FRONTEND_URL.rstrip('/')}/auth/set-password"
+    login_url = f"{settings.FRONTEND_URL.rstrip('/')}/login"
+
+    # Generate a secure temporary password: 16 chars, mixed case + digits + symbols
+    alphabet = string.ascii_letters + string.digits + "!@#$%"
+    while True:
+        temp_password = "".join(secrets.choice(alphabet) for _ in range(16))
+        if (any(c.isupper() for c in temp_password)
+                and any(c.islower() for c in temp_password)
+                and any(c.isdigit() for c in temp_password)
+                and any(c in "!@#$%" for c in temp_password)):
+            break
 
     try:
-        # Step 1: Create the auth user without a password.
-        # generate_link(type="invite") in the gotrue Python SDK incorrectly routes to
-        # admin/users instead of admin/generate_link, returning None for action_link.
-        # So we use create_user first, then generate_link(type="recovery") separately.
         auth_response = await admin_client.auth.admin.create_user({
             "email": email.lower().strip(),
+            "password": temp_password,
             "email_confirm": True,
             "user_metadata": {
                 "full_name": full_name,
@@ -208,44 +218,6 @@ async def create_internal_user(
             )
 
         auth_user_id = str(auth_response.user.id)
-
-        # Step 2: Generate a recovery/invite link via direct HTTP call to Supabase.
-        # The gotrue Python SDK's generate_link() is broken — it silently falls back
-        # to admin/users instead of admin/generate_link, so action_link is always None.
-        # We bypass the SDK entirely and call the REST API directly.
-        import httpx
-        async with httpx.AsyncClient(timeout=15.0) as http:
-            gen_resp = await http.post(
-                f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1/admin/generate_link",
-                headers={
-                    "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
-                    "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "type": "recovery",
-                    "email": email.lower().strip(),
-                    "redirect_to": redirect_to,
-                },
-            )
-
-        if gen_resp.status_code not in (200, 201):
-            logger.error(
-                "generate_link API error %s for %s: %s",
-                gen_resp.status_code, email, gen_resp.text,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to generate invite link: {gen_resp.text}",
-            )
-
-        invite_link: str = gen_resp.json().get("action_link", "")
-        if not invite_link:
-            logger.error("generate_link returned no action_link for %s: %s", email, gen_resp.text)
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Invite link generation failed — no action_link in response.",
-            )
 
         profile = await db.fetchrow(
             """
@@ -269,11 +241,14 @@ async def create_internal_user(
             staff_email=email.lower().strip(),
             staff_name=full_name,
             role_label=role_label,
-            invite_link=invite_link,
+            temp_password=temp_password,
+            login_url=login_url,
             invited_by_name=invited_by_name,
         )
 
-        return dict(profile), invite_link, email_sent
+        # Return temp_password as "invite_link" — the admin modal displays it
+        # so the admin can share it manually if the email was not delivered.
+        return dict(profile), temp_password, email_sent
 
     except HTTPException:
         raise

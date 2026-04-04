@@ -219,10 +219,10 @@ function CreateStaffModal({ onClose, onCreated }: CreateStaffModalProps) {
             )}
 
             <div className="space-y-2">
-              <p className="text-sm font-medium text-text-primary">Invite link (share manually if needed)</p>
-              <p className="text-xs text-text-secondary">This link lets the staff member set their password. It expires after 24 hours.</p>
+              <p className="text-sm font-medium text-text-primary">Temporary Password</p>
+              <p className="text-xs text-text-secondary">Share this with the staff member. They must change it after first login.</p>
               <div className="flex items-center gap-2">
-                <div className="flex-1 px-3 py-2 rounded-lg bg-gray-50 border border-border text-xs font-mono text-text-secondary truncate select-all">
+                <div className="flex-1 px-3 py-2 rounded-lg bg-gray-50 border border-border text-sm font-mono font-bold tracking-widest text-ocean select-all">
                   {inviteLink}
                 </div>
                 <Button

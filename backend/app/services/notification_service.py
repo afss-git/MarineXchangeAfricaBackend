@@ -558,37 +558,49 @@ async def send_staff_welcome(
     staff_email: str,
     staff_name: str,
     role_label: str,
-    invite_link: str,
+    temp_password: str,
+    login_url: str,
     invited_by_name: str,
 ) -> bool:
     """
     Sent to a newly created staff account (agent or admin).
-    Contains a one-time invite link to set their password.
-    The link expires after 24 hours.
+    Contains their temporary password and a link to the login page.
     Returns True if Resend accepted the email, False otherwise.
     """
     return await _send(
         to=staff_email,
         subject="You've been invited to MarineXchange Africa",
         html=f"""
+        <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;">
         <p>Dear {staff_name},</p>
         <p>You have been invited to join <strong>MarineXchange Africa</strong> as a
         <strong>{role_label}</strong> by {invited_by_name}.</p>
-        <p>Click the button below to set your password and activate your account.
-        This link is valid for <strong>24 hours</strong>.</p>
+        <p>Your temporary login credentials are below. Please log in and
+        <strong>change your password immediately</strong> after your first login.</p>
+        <table style="width:100%;border:1px solid #e5e7eb;border-radius:8px;
+                      background:#f9fafb;padding:16px;border-spacing:0;margin:24px 0;">
+            <tr>
+                <td style="padding:8px 12px;font-weight:600;color:#374151;white-space:nowrap;">Email</td>
+                <td style="padding:8px 12px;font-family:monospace;color:#111827;">{staff_email}</td>
+            </tr>
+            <tr style="border-top:1px solid #e5e7eb;">
+                <td style="padding:8px 12px;font-weight:600;color:#374151;white-space:nowrap;">Temporary Password</td>
+                <td style="padding:8px 12px;font-family:monospace;font-size:16px;
+                           font-weight:700;color:#0057A8;letter-spacing:1px;">{temp_password}</td>
+            </tr>
+        </table>
         <p style="margin:32px 0;">
-            <a href="{invite_link}"
+            <a href="{login_url}"
                style="background:#0057A8;color:#ffffff;padding:12px 28px;border-radius:6px;
                       text-decoration:none;font-weight:600;display:inline-block;">
-                Set Your Password
+                Log In Now
             </a>
         </p>
-        <p>If the button does not work, copy and paste this link into your browser:</p>
-        <p style="font-family:monospace;word-break:break-all;font-size:13px;">{invite_link}</p>
-        <p>If you did not expect this invitation, please ignore this email or contact
-        our support team.</p>
-        <br/>
+        <p style="color:#6b7280;font-size:13px;">
+            If you did not expect this invitation, please ignore this email or contact our support team.
+        </p>
         <p>Best regards,<br/><strong>MarineXchange Africa</strong></p>
+        </div>
         """,
         tags=[{"name": "category", "value": "staff_invite"}],
     )
