@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Email notification service via Resend.
 
