@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Core authentication service.
 Handles all interactions with Supabase Auth + profile management.
