@@ -7,7 +7,6 @@ All KYC status-change emails are sent from here.
 Functions are async-safe and never raise — failures are logged but
 do NOT block the primary operation.
 """
-from __future__ import annotations
 
 import logging
 from typing import Any

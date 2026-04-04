@@ -10,7 +10,6 @@ Security principles:
 - All logins are audited
 - Role checks happen before any data is returned
 """
-from __future__ import annotations
 
 import logging
 from typing import Any
