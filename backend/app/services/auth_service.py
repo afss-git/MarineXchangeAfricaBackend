@@ -165,15 +165,19 @@ async def create_internal_user(
     created_by: UUID,
     invited_by_name: str,
     request: Request,
-) -> tuple[dict, str, bool]:
+    custom_password: str | None = None,
+) -> tuple[dict, str, str | None, bool]:
     """
-    Creates an internal user (agent, admin, finance_admin) using the admin client.
-    A secure temporary password is generated and emailed to the staff member.
-    The admin also sees the password in the modal so they can share it manually.
-    Staff must change their password after first login.
+    Creates an internal user (agent, admin, finance_admin).
+
+    Returns: (profile_dict, password, invite_link_or_None, email_sent)
+    - password: the temp password (auto-generated or admin-supplied)
+    - invite_link: a Supabase one-time link for password setup, or None if generation failed
+    - email_sent: whether the invite email was dispatched via Resend
     """
     import secrets
     import string
+    import httpx
     from app.services.notification_service import send_staff_welcome
 
     admin_client = await get_supabase_admin_client()
@@ -187,21 +191,26 @@ async def create_internal_user(
     }
     role_label = ROLE_LABELS.get(roles[0], roles[0].replace("_", " ").title())
     login_url = f"{settings.FRONTEND_URL.rstrip('/')}/login"
+    set_password_url = f"{settings.FRONTEND_URL.rstrip('/')}/auth/set-password"
 
-    # Generate a secure temporary password: 16 chars, mixed case + digits + symbols
-    alphabet = string.ascii_letters + string.digits + "!@#$%"
-    while True:
-        temp_password = "".join(secrets.choice(alphabet) for _ in range(16))
-        if (any(c.isupper() for c in temp_password)
-                and any(c.islower() for c in temp_password)
-                and any(c.isdigit() for c in temp_password)
-                and any(c in "!@#$%" for c in temp_password)):
-            break
+    # Use admin-supplied password or generate a secure random one
+    if custom_password:
+        password = custom_password
+    else:
+        alphabet = string.ascii_letters + string.digits + "!@#$%"
+        while True:
+            password = "".join(secrets.choice(alphabet) for _ in range(16))
+            if (any(c.isupper() for c in password)
+                    and any(c.islower() for c in password)
+                    and any(c.isdigit() for c in password)
+                    and any(c in "!@#$%" for c in password)):
+                break
 
     try:
+        # Create the auth user with the password
         auth_response = await admin_client.auth.admin.create_user({
             "email": email.lower().strip(),
-            "password": temp_password,
+            "password": password,
             "email_confirm": True,
             "user_metadata": {
                 "full_name": full_name,
@@ -218,6 +227,35 @@ async def create_internal_user(
             )
 
         auth_user_id = str(auth_response.user.id)
+
+        # Try to generate a one-time password-reset link via direct HTTP to Supabase REST API.
+        # The gotrue Python SDK routes generate_link() to the wrong endpoint, so we call directly.
+        invite_link: str | None = None
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as http:
+                gen_resp = await http.post(
+                    f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1/admin/generate_link",
+                    headers={
+                        "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+                        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "type": "recovery",
+                        "email": email.lower().strip(),
+                        "redirect_to": set_password_url,
+                    },
+                )
+            if gen_resp.status_code in (200, 201):
+                invite_link = gen_resp.json().get("action_link")
+                if invite_link:
+                    logger.info("Generated invite link for %s", email)
+                else:
+                    logger.warning("generate_link returned no action_link for %s: %s", email, gen_resp.text)
+            else:
+                logger.warning("generate_link HTTP %s for %s: %s", gen_resp.status_code, email, gen_resp.text[:200])
+        except Exception as link_exc:
+            logger.warning("generate_link failed for %s (non-fatal): %s", email, link_exc)
 
         profile = await db.fetchrow(
             """
@@ -236,19 +274,18 @@ async def create_internal_user(
             roles,
         )
 
-        # Send invite email via Resend — failure does NOT block account creation
+        # Send invite email — failure does NOT block account creation
         email_sent = await send_staff_welcome(
             staff_email=email.lower().strip(),
             staff_name=full_name,
             role_label=role_label,
-            temp_password=temp_password,
+            password=password,
+            invite_link=invite_link,
             login_url=login_url,
             invited_by_name=invited_by_name,
         )
 
-        # Return temp_password as "invite_link" — the admin modal displays it
-        # so the admin can share it manually if the email was not delivered.
-        return dict(profile), temp_password, email_sent
+        return dict(profile), password, invite_link, email_sent
 
     except HTTPException:
         raise

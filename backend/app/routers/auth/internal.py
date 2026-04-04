@@ -17,6 +17,7 @@ from uuid import UUID
 
 import asyncpg
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.core.audit import AuditAction, write_audit_log
@@ -26,7 +27,6 @@ from app.schemas.auth import (
     BootstrapAdminRequest,
     CreateAdminRequest,
     CreateAgentRequest,
-    CreateStaffResponse,
     LoginRequest,
     MessageResponse,
     UserProfileResponse,
@@ -236,13 +236,8 @@ async def agent_logout(
 
 @router.post(
     "/internal/create-agent",
-    response_model=CreateStaffResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create agent account [Admin only]",
-    description=(
-        "Creates a verification_agent or buyer_agent account. "
-        "Returns the profile and a one-time invite link for the staff member to set their password."
-    ),
 )
 async def create_agent(
     payload: CreateAgentRequest,
@@ -250,7 +245,7 @@ async def create_agent(
     request: Request,
     db: DbConn,
 ):
-    profile, invite_link, email_sent = await create_internal_user(
+    profile, password, invite_link, email_sent = await create_internal_user(
         db=db,
         email=payload.email,
         full_name=payload.full_name,
@@ -262,6 +257,7 @@ async def create_agent(
         created_by=UUID(str(current_user["id"])),
         invited_by_name=current_user.get("full_name") or "MarineXchange Admin",
         request=request,
+        custom_password=payload.custom_password,
     )
 
     await write_audit_log(
@@ -279,18 +275,22 @@ async def create_agent(
         },
     )
 
-    return CreateStaffResponse(profile=build_profile_response(profile), invite_link=invite_link, email_sent=email_sent)
+    profile_data = build_profile_response(profile).model_dump(mode="json")
+    return JSONResponse(
+        status_code=201,
+        content={
+            "profile": profile_data,
+            "password": password,
+            "invite_link": invite_link,
+            "email_sent": email_sent,
+        },
+    )
 
 
 @router.post(
     "/internal/create-admin",
-    response_model=CreateStaffResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create admin or finance_admin account [Admin only]",
-    description=(
-        "Creates an admin or finance_admin account. "
-        "Returns the profile and a one-time invite link for the staff member to set their password."
-    ),
 )
 async def create_admin_user(
     payload: CreateAdminRequest,
@@ -298,7 +298,7 @@ async def create_admin_user(
     request: Request,
     db: DbConn,
 ):
-    profile, invite_link, email_sent = await create_internal_user(
+    profile, password, invite_link, email_sent = await create_internal_user(
         db=db,
         email=payload.email,
         full_name=payload.full_name,
@@ -310,6 +310,7 @@ async def create_admin_user(
         created_by=UUID(str(current_user["id"])),
         invited_by_name=current_user.get("full_name") or "MarineXchange Admin",
         request=request,
+        custom_password=payload.custom_password,
     )
 
     await write_audit_log(
@@ -328,6 +329,15 @@ async def create_admin_user(
         },
     )
 
-    return CreateStaffResponse(profile=build_profile_response(profile), invite_link=invite_link, email_sent=email_sent)
+    profile_data = build_profile_response(profile).model_dump(mode="json")
+    return JSONResponse(
+        status_code=201,
+        content={
+            "profile": profile_data,
+            "password": password,
+            "invite_link": invite_link,
+            "email_sent": email_sent,
+        },
+    )
 
 
