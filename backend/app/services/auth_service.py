@@ -209,20 +209,43 @@ async def create_internal_user(
 
         auth_user_id = str(auth_response.user.id)
 
-        # Step 2: Generate a recovery link — this calls the correct
-        # admin/generate_link endpoint and returns a real action_link.
-        link_response = await admin_client.auth.admin.generate_link({
-            "type": "recovery",
-            "email": email.lower().strip(),
-            "options": {
-                "redirect_to": redirect_to,
-            },
-        })
+        # Step 2: Generate a recovery/invite link via direct HTTP call to Supabase.
+        # The gotrue Python SDK's generate_link() is broken — it silently falls back
+        # to admin/users instead of admin/generate_link, so action_link is always None.
+        # We bypass the SDK entirely and call the REST API directly.
+        import httpx
+        async with httpx.AsyncClient(timeout=15.0) as http:
+            gen_resp = await http.post(
+                f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1/admin/generate_link",
+                headers={
+                    "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+                    "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "type": "recovery",
+                    "email": email.lower().strip(),
+                    "redirect_to": redirect_to,
+                },
+            )
 
-        invite_link: str = link_response.properties.action_link
+        if gen_resp.status_code not in (200, 201):
+            logger.error(
+                "generate_link API error %s for %s: %s",
+                gen_resp.status_code, email, gen_resp.text,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to generate invite link: {gen_resp.text}",
+            )
+
+        invite_link: str = gen_resp.json().get("action_link", "")
         if not invite_link:
-            logger.error("generate_link returned no action_link for %s", email)
-            invite_link = redirect_to  # fallback — won't auto-auth but won't crash
+            logger.error("generate_link returned no action_link for %s: %s", email, gen_resp.text)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Invite link generation failed — no action_link in response.",
+            )
 
         profile = await db.fetchrow(
             """
