@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Email notification service via Resend.
 
@@ -9,7 +7,7 @@ do NOT block the primary operation.
 """
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 import httpx
 
@@ -562,7 +560,7 @@ async def send_staff_welcome(
     password: str,
     login_url: str,
     invited_by_name: str,
-    invite_link: str | None = None,
+    invite_link: Optional[str] = None,
 ) -> bool:
     """
     Sent to a newly created staff account (agent or admin).

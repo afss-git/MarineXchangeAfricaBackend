@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Core authentication service.
 Handles all interactions with Supabase Auth + profile management.
@@ -12,7 +10,7 @@ Security principles:
 """
 
 import logging
-from typing import Any
+from typing import Any, Optional, Tuple
 from uuid import UUID
 
 import asyncpg
@@ -51,8 +49,8 @@ async def create_user_with_profile(
     email: str,
     password: str,
     full_name: str,
-    company_name: str | None,
-    company_reg_no: str | None,
+    company_name: Optional[str],
+    company_reg_no: Optional[str],
     phone: str,
     country: str,
     roles: list[str],
@@ -65,7 +63,7 @@ async def create_user_with_profile(
     Returns the created profile record.
     """
     supabase = await get_supabase_client()
-    auth_user_id: str | None = None
+    auth_user_id: Optional[str] = None
 
     try:
         # Step 1: Create auth user in Supabase
@@ -158,16 +156,16 @@ async def create_internal_user(
     db: asyncpg.Connection,
     email: str,
     full_name: str,
-    company_name: str | None,
-    company_reg_no: str | None,
+    company_name: Optional[str],
+    company_reg_no: Optional[str],
     phone: str,
     country: str,
     roles: list[str],
     created_by: UUID,
     invited_by_name: str,
     request: Request,
-    custom_password: str | None = None,
-) -> tuple[dict, str, str | None, bool]:
+    custom_password: Optional[str] = None,
+) -> Tuple[dict, str, Optional[str], bool]:
     """
     Creates an internal user (agent, admin, finance_admin).
 
@@ -182,7 +180,7 @@ async def create_internal_user(
     from app.services.notification_service import send_staff_welcome
 
     admin_client = await get_supabase_admin_client()
-    auth_user_id: str | None = None
+    auth_user_id: Optional[str] = None
 
     ROLE_LABELS = {
         "verification_agent": "Verification Agent",
@@ -231,7 +229,7 @@ async def create_internal_user(
 
         # Try to generate a one-time password-reset link via direct HTTP to Supabase REST API.
         # The gotrue Python SDK routes generate_link() to the wrong endpoint, so we call directly.
-        invite_link: str | None = None
+        invite_link: Optional[str] = None
         try:
             async with httpx.AsyncClient(timeout=10.0) as http:
                 gen_resp = await http.post(
@@ -342,7 +340,7 @@ async def create_first_admin(
     - Guarded at the endpoint layer: only callable when zero admin profiles exist.
     """
     admin_client = await get_supabase_admin_client()
-    auth_user_id: str | None = None
+    auth_user_id: Optional[str] = None
 
     try:
         auth_response = await admin_client.auth.admin.create_user({
@@ -419,9 +417,9 @@ async def login_user(
     db: asyncpg.Connection,
     email: str,
     password: str,
-    required_role: str | None,
+    required_role: Optional[str],
     request: Request,
-    required_role_any: list[str] | None = None,
+    required_role_any: Optional[list] = None,
 ) -> AuthTokenResponse:
     """
     Authenticates a user via Supabase, then validates their role.
@@ -592,7 +590,7 @@ def build_profile_response(profile: dict | asyncpg.Record) -> UserProfileRespons
 # ── Private helpers ───────────────────────────────────────────────────────────
 
 async def _cleanup_orphan_auth_user(
-    auth_user_id: str | None,
+    auth_user_id: Optional[str],
     use_admin: bool = False,
 ) -> None:
     """
