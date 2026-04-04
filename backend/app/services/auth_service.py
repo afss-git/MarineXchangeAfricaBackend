@@ -186,29 +186,43 @@ async def create_internal_user(
     redirect_to = f"{settings.FRONTEND_URL.rstrip('/')}/auth/set-password"
 
     try:
-        # generate_link(type="invite") creates the auth user AND returns a one-time
-        # invite link. The user clicks it to set their password — no temp password needed.
-        link_response = await admin_client.auth.admin.generate_link({
-            "type": "invite",
+        # Step 1: Create the auth user without a password.
+        # generate_link(type="invite") in the gotrue Python SDK incorrectly routes to
+        # admin/users instead of admin/generate_link, returning None for action_link.
+        # So we use create_user first, then generate_link(type="recovery") separately.
+        auth_response = await admin_client.auth.admin.create_user({
             "email": email.lower().strip(),
-            "options": {
-                "redirect_to": redirect_to,
-                "data": {
-                    "full_name": full_name,
-                    "roles": roles,
-                    "created_by": str(created_by),
-                },
+            "email_confirm": True,
+            "user_metadata": {
+                "full_name": full_name,
+                "roles": roles,
+                "created_by": str(created_by),
+                "requires_password_change": True,
             },
         })
 
-        if not link_response.user:
+        if not auth_response.user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Internal user creation failed.",
             )
 
-        auth_user_id = str(link_response.user.id)
+        auth_user_id = str(auth_response.user.id)
+
+        # Step 2: Generate a recovery link — this calls the correct
+        # admin/generate_link endpoint and returns a real action_link.
+        link_response = await admin_client.auth.admin.generate_link({
+            "type": "recovery",
+            "email": email.lower().strip(),
+            "options": {
+                "redirect_to": redirect_to,
+            },
+        })
+
         invite_link: str = link_response.properties.action_link
+        if not invite_link:
+            logger.error("generate_link returned no action_link for %s", email)
+            invite_link = redirect_to  # fallback — won't auto-auth but won't crash
 
         profile = await db.fetchrow(
             """
