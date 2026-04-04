@@ -560,13 +560,14 @@ async def send_staff_welcome(
     role_label: str,
     invite_link: str,
     invited_by_name: str,
-) -> None:
+) -> bool:
     """
     Sent to a newly created staff account (agent or admin).
     Contains a one-time invite link to set their password.
     The link expires after 24 hours.
+    Returns True if Resend accepted the email, False otherwise.
     """
-    await _send(
+    return await _send(
         to=staff_email,
         subject="You've been invited to MarineXchange Africa",
         html=f"""

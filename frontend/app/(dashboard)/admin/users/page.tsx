@@ -107,6 +107,7 @@ function CreateStaffModal({ onClose, onCreated }: CreateStaffModalProps) {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [inviteLink, setInviteLink] = useState<string | null>(null)
+  const [emailSent, setEmailSent] = useState(false)
   const [copied, setCopied] = useState(false)
 
   const set = (field: string, value: string) => {
@@ -158,8 +159,10 @@ function CreateStaffModal({ onClose, onCreated }: CreateStaffModalProps) {
           country: form.country.trim(),
         })
       }
-      onCreated(`${form.full_name.trim()} created successfully as ${form.role.replace(/_/g, " ")}.`)
+      // Don't call onCreated yet — wait until user clicks Done so mutate()
+      // doesn't re-mount the modal and wipe the inviteLink state
       setInviteLink(res.invite_link)
+      setEmailSent(res.email_sent)
     } catch (err) {
       setSubmitError(err instanceof ApiRequestError ? err.message : "Failed to create staff account.")
     } finally {
@@ -200,9 +203,20 @@ function CreateStaffModal({ onClose, onCreated }: CreateStaffModalProps) {
             <div className="flex items-center gap-3 p-3 rounded-lg bg-success/10 border border-success/20">
               <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
               <p className="text-sm text-success font-medium">
-                Account created. An invite email has been sent to <strong>{form.email.trim()}</strong>.
+                Account created for <strong>{form.full_name.trim()}</strong>.
               </p>
             </div>
+
+            {emailSent ? (
+              <p className="text-sm text-text-secondary">
+                An invite email was sent to <strong>{form.email.trim()}</strong>. Share the link below as backup.
+              </p>
+            ) : (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/20 text-sm text-warning">
+                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                <span>Email could not be sent to <strong>{form.email.trim()}</strong>. Share the invite link below manually.</span>
+              </div>
+            )}
 
             <div className="space-y-2">
               <p className="text-sm font-medium text-text-primary">Invite link (share manually if needed)</p>
@@ -223,7 +237,13 @@ function CreateStaffModal({ onClose, onCreated }: CreateStaffModalProps) {
               </div>
             </div>
 
-            <Button onClick={onClose} className="w-full bg-ocean hover:bg-ocean/90 text-white">
+            <Button
+              onClick={() => {
+                onCreated(`${form.full_name.trim()} created successfully as ${form.role.replace(/_/g, " ")}.`)
+                onClose()
+              }}
+              className="w-full bg-ocean hover:bg-ocean/90 text-white"
+            >
               Done
             </Button>
           </div>

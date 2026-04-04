@@ -250,7 +250,7 @@ async def create_agent(
     request: Request,
     db: DbConn,
 ):
-    profile, invite_link = await create_internal_user(
+    profile, invite_link, email_sent = await create_internal_user(
         db=db,
         email=payload.email,
         full_name=payload.full_name,
@@ -275,10 +275,11 @@ async def create_agent(
         metadata={
             "created_by": str(current_user["id"]),
             "ip": current_user["_client_ip"],
+            "invite_email_sent": email_sent,
         },
     )
 
-    return CreateStaffResponse(profile=build_profile_response(profile), invite_link=invite_link)
+    return CreateStaffResponse(profile=build_profile_response(profile), invite_link=invite_link, email_sent=email_sent)
 
 
 @router.post(
@@ -297,7 +298,7 @@ async def create_admin_user(
     request: Request,
     db: DbConn,
 ):
-    profile, invite_link = await create_internal_user(
+    profile, invite_link, email_sent = await create_internal_user(
         db=db,
         email=payload.email,
         full_name=payload.full_name,
@@ -323,9 +324,10 @@ async def create_admin_user(
             "created_by": str(current_user["id"]),
             "ip": current_user["_client_ip"],
             "internal_account": True,
+            "invite_email_sent": email_sent,
         },
     )
 
-    return CreateStaffResponse(profile=build_profile_response(profile), invite_link=invite_link)
+    return CreateStaffResponse(profile=build_profile_response(profile), invite_link=invite_link, email_sent=email_sent)
 
 

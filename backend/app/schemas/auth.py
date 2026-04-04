@@ -296,6 +296,7 @@ class CreateStaffResponse(BaseModel):
     """Returned when an admin creates a staff account. Includes the one-time invite link."""
     profile: "UserProfileResponse"
     invite_link: str
+    email_sent: bool = False
 
 
 class SetPasswordBody(BaseModel):

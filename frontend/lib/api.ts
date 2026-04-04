@@ -2209,7 +2209,7 @@ export const authAdmin = {
     email: string; full_name: string
     agent_type: "verification_agent" | "buyer_agent"
     phone: string; country: string
-  }) => request<{ profile: UserProfile; invite_link: string }>("/auth/internal/create-agent", {
+  }) => request<{ profile: UserProfile; invite_link: string; email_sent: boolean }>("/auth/internal/create-agent", {
     method: "POST", body: JSON.stringify(data),
   }),
 
@@ -2217,7 +2217,7 @@ export const authAdmin = {
     email: string; full_name: string
     role: "admin" | "finance_admin"
     phone: string; country: string
-  }) => request<{ profile: UserProfile; invite_link: string }>("/auth/internal/create-admin", {
+  }) => request<{ profile: UserProfile; invite_link: string; email_sent: boolean }>("/auth/internal/create-admin", {
     method: "POST", body: JSON.stringify(data),
   }),
 }
