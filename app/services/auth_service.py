@@ -186,7 +186,7 @@ async def create_internal_user(
         "finance_admin": "Finance Administrator",
     }
     role_label = ROLE_LABELS.get(roles[0], roles[0].replace("_", " ").title())
-    redirect_to = f"{settings.FRONTEND_URL}/auth/set-password"
+    redirect_to = f"{settings.FRONTEND_URL}/set-password"
 
     try:
         import secrets as _secrets
