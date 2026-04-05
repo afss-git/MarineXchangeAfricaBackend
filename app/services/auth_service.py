@@ -16,7 +16,10 @@ from uuid import UUID
 
 import asyncpg
 from fastapi import HTTPException, Request, status
-from gotrue.errors import AuthApiError
+try:
+    from gotrue.errors import AuthApiError
+except ImportError:
+    from supabase_auth.errors import AuthApiError
 from supabase import AClient, acreate_client
 
 from app.config import settings
