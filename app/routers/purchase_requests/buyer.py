@@ -3,7 +3,7 @@ Phase 7 — Buyer purchase-request endpoints.
 
 GET  /purchase-requests/my              — list my requests
 GET  /purchase-requests/{id}            — view one request
-POST /purchase-requests                 — submit new request (KYC-gated)
+POST /purchase-requests                 — submit new request (buyer role only)
 DELETE /purchase-requests/{id}          — cancel (only if submitted)
 """
 from __future__ import annotations

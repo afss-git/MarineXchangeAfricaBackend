@@ -552,6 +552,74 @@ async def send_kyc_expiry_warning(
     )
 
 
+# ── Staff Invite ──────────────────────────────────────────────────────────────
+
+async def send_staff_welcome(
+    staff_email: str,
+    staff_name: str,
+    role_label: str,
+    invite_link: str,
+    invited_by_name: str,
+    temp_password: str = "",
+) -> bool:
+    """
+    Sent to a newly created staff account (agent or admin).
+    Contains the temporary password and optionally a one-time setup link.
+    Returns True if Resend accepted the email, False otherwise.
+    """
+    # If invite_link looks like a URL, show it as a clickable button
+    # If it's the temp password (fallback), show login link instead
+    login_url = f"https://marine-xchange-africa-fronend.vercel.app/login"
+    if invite_link.startswith("http"):
+        link_section = f"""
+        <p style="margin-top:16px;">Or click below to set your own password (link expires in 24 hours):</p>
+        <p style="margin:16px 0 32px;">
+            <a href="{invite_link}"
+               style="background:#0057A8;color:#ffffff;padding:12px 28px;border-radius:6px;
+                      text-decoration:none;font-weight:600;display:inline-block;">
+                Set My Password
+            </a>
+        </p>"""
+    else:
+        link_section = f"""
+        <p style="margin:24px 0;">
+            <a href="{login_url}"
+               style="background:#0057A8;color:#ffffff;padding:12px 28px;border-radius:6px;
+                      text-decoration:none;font-weight:600;display:inline-block;">
+                Log In Now
+            </a>
+        </p>"""
+
+    password_to_show = temp_password if temp_password else invite_link
+
+    return await _send(
+        to=staff_email,
+        subject="You've been invited to MarineXchange Africa",
+        html=f"""
+        <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;">
+        <p>Dear {staff_name},</p>
+        <p>You have been invited to join <strong>MarineXchange Africa</strong> as a
+        <strong>{role_label}</strong> by {invited_by_name}.</p>
+        <p>Your temporary login credentials are below. Please log in and change your password after first login.</p>
+        <table style="width:100%;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;border-spacing:0;margin:20px 0;">
+            <tr>
+                <td style="padding:10px 14px;font-weight:600;color:#374151;">Email</td>
+                <td style="padding:10px 14px;font-family:monospace;">{staff_email}</td>
+            </tr>
+            <tr style="border-top:1px solid #e5e7eb;">
+                <td style="padding:10px 14px;font-weight:600;color:#374151;">Password</td>
+                <td style="padding:10px 14px;font-family:monospace;font-size:16px;font-weight:700;color:#0057A8;letter-spacing:1px;">{password_to_show}</td>
+            </tr>
+        </table>
+        {link_section}
+        <p style="color:#6b7280;font-size:13px;">If you did not expect this invitation, please ignore this email.</p>
+        <p>Best regards,<br/><strong>MarineXchange Africa</strong></p>
+        </div>
+        """,
+        tags=[{"name": "category", "value": "staff_invite"}],
+    )
+
+
 # ── Purchase Request notification functions ───────────────────────────────────
 
 async def notify_admin_new_purchase_request(

@@ -292,6 +292,29 @@ class ChangePasswordBody(BaseModel):
         return v
 
 
+class CreateStaffResponse(BaseModel):
+    """Returned when an admin creates a staff account. Includes the one-time invite link."""
+    profile: "UserProfileResponse"
+    invite_link: str
+    email_sent: bool = False
+
+
+class SetPasswordBody(BaseModel):
+    """Set password for first-time login via invite link — no current password required."""
+    model_config = {"extra": "forbid"}
+
+    new_password: str = Field(min_length=12, max_length=72)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, v: str) -> str:
+        try:
+            validate_password_strength(v)
+        except PasswordValidationError as e:
+            raise ValueError(str(e))
+        return v
+
+
 class AuthTokenResponse(BaseModel):
     """Returned on successful login or signup-with-auto-login."""
     access_token: str

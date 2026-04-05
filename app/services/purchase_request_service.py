@@ -18,6 +18,7 @@ from uuid import UUID
 import asyncpg
 from fastapi import HTTPException, status
 
+from app.config import settings
 from app.core.audit import AuditAction, write_audit_log
 from app.schemas.purchase_requests import (
     AdminPurchaseRequestDetail,
@@ -32,6 +33,7 @@ from app.schemas.purchase_requests import (
     ConvertToDealResponse,
 )
 from app.services import notification_service
+from app.services.auth_service import get_supabase_admin_client
 from app.services.deal_service import generate_deal_ref
 
 logger = logging.getLogger(__name__)
@@ -40,6 +42,18 @@ logger = logging.getLogger(__name__)
 # ══════════════════════════════════════════════════════════════════════════════
 # PRIVATE HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
+
+async def _signed_image_url(storage_path: str) -> str | None:
+    """Generate a short-lived signed URL for a product image in Supabase Storage."""
+    try:
+        supabase = await get_supabase_admin_client()
+        result = await supabase.storage.from_(settings.SUPABASE_STORAGE_BUCKET).create_signed_url(
+            storage_path, settings.SIGNED_URL_EXPIRY_SECONDS
+        )
+        return result.get("signedURL") or result.get("signed_url") or None
+    except Exception as exc:
+        logger.warning("Failed to generate signed URL for %s: %s", storage_path, exc)
+        return None
 
 def _pr_to_response(row: asyncpg.Record, product_title: str | None = None) -> PurchaseRequestResponse:
     return PurchaseRequestResponse(
@@ -71,19 +85,46 @@ async def _fetch_pr_admin_detail(
         """
         SELECT
             pr.*,
-            mp.title                AS product_title,
-            buyer.full_name         AS buyer_name,
-            bu.email                AS buyer_email
+            mp.title               AS product_title,
+            mp.asking_price        AS product_asking_price,
+            mp.currency            AS product_currency,
+            mp.condition           AS product_condition,
+            mp.availability_type   AS product_availability_type,
+            mp.location_country    AS product_location_country,
+            mp.location_port       AS product_location_port,
+            sp.company_name        AS seller_company,
+            buyer.full_name        AS buyer_name,
+            buyer.phone            AS buyer_phone,
+            buyer.company_name     AS buyer_company_name,
+            buyer.kyc_status       AS buyer_kyc_status,
+            buyer.country          AS buyer_country,
+            bu.email               AS buyer_email
         FROM marketplace.purchase_requests pr
-        LEFT JOIN marketplace.products mp   ON mp.id = pr.product_id
-        LEFT JOIN public.profiles buyer     ON buyer.id = pr.buyer_id
-        LEFT JOIN auth.users bu             ON bu.id = pr.buyer_id
+        LEFT JOIN marketplace.products mp      ON mp.id = pr.product_id
+        LEFT JOIN public.profiles sp           ON sp.id = mp.seller_id
+        LEFT JOIN public.profiles buyer        ON buyer.id = pr.buyer_id
+        LEFT JOIN auth.users bu                ON bu.id = pr.buyer_id
         WHERE pr.id = $1
         """,
         request_id,
     )
     if not row:
         return None
+
+    # Fetch primary product image and generate signed URL
+    image_url: str | None = None
+    if row.get("product_id"):
+        img_row = await db.fetchrow(
+            """
+            SELECT storage_path FROM marketplace.product_images
+            WHERE product_id = $1
+            ORDER BY is_primary DESC, display_order ASC
+            LIMIT 1
+            """,
+            row["product_id"],
+        )
+        if img_row:
+            image_url = await _signed_image_url(img_row["storage_path"])
 
     # Load latest assignment
     asgn_row = await db.fetchrow(
@@ -139,9 +180,21 @@ async def _fetch_pr_admin_detail(
         id=row["id"],
         product_id=row["product_id"],
         product_title=row.get("product_title"),
+        product_asking_price=row.get("product_asking_price"),
+        product_currency=row.get("product_currency"),
+        product_condition=row.get("product_condition"),
+        product_availability_type=row.get("product_availability_type"),
+        product_location_country=row.get("product_location_country"),
+        product_location_port=row.get("product_location_port"),
+        product_primary_image_url=image_url,
+        seller_company=row.get("seller_company"),
         buyer_id=row["buyer_id"],
         buyer_name=row.get("buyer_name"),
         buyer_email=row.get("buyer_email"),
+        buyer_phone=row.get("buyer_phone"),
+        buyer_company_name=row.get("buyer_company_name"),
+        buyer_kyc_status=row.get("buyer_kyc_status"),
+        buyer_country=row.get("buyer_country"),
         purchase_type=row["purchase_type"],
         quantity=row["quantity"],
         offered_price=row.get("offered_price"),
@@ -358,13 +411,25 @@ async def admin_list_requests(
         f"""
         SELECT
             pr.*,
-            mp.title        AS product_title,
-            buyer.full_name AS buyer_name,
-            bu.email        AS buyer_email
+            mp.title               AS product_title,
+            mp.asking_price        AS product_asking_price,
+            mp.currency            AS product_currency,
+            mp.condition           AS product_condition,
+            mp.availability_type   AS product_availability_type,
+            mp.location_country    AS product_location_country,
+            mp.location_port       AS product_location_port,
+            sp.company_name        AS seller_company,
+            buyer.full_name        AS buyer_name,
+            buyer.phone            AS buyer_phone,
+            buyer.company_name     AS buyer_company_name,
+            buyer.kyc_status       AS buyer_kyc_status,
+            buyer.country          AS buyer_country,
+            bu.email               AS buyer_email
         FROM marketplace.purchase_requests pr
-        LEFT JOIN marketplace.products mp   ON mp.id = pr.product_id
-        LEFT JOIN public.profiles buyer     ON buyer.id = pr.buyer_id
-        LEFT JOIN auth.users bu             ON bu.id = pr.buyer_id
+        LEFT JOIN marketplace.products mp      ON mp.id = pr.product_id
+        LEFT JOIN public.profiles sp           ON sp.id = mp.seller_id
+        LEFT JOIN public.profiles buyer        ON buyer.id = pr.buyer_id
+        LEFT JOIN auth.users bu                ON bu.id = pr.buyer_id
         {where}
         ORDER BY pr.created_at DESC
         """,
@@ -403,9 +468,21 @@ async def admin_list_requests(
             id=row["id"],
             product_id=row["product_id"],
             product_title=row.get("product_title"),
+            product_asking_price=row.get("product_asking_price"),
+            product_currency=row.get("product_currency"),
+            product_condition=row.get("product_condition"),
+            product_availability_type=row.get("product_availability_type"),
+            product_location_country=row.get("product_location_country"),
+            product_location_port=row.get("product_location_port"),
+            product_primary_image_url=None,  # not fetched in list — loaded on expand
+            seller_company=row.get("seller_company"),
             buyer_id=row["buyer_id"],
             buyer_name=row.get("buyer_name"),
             buyer_email=row.get("buyer_email"),
+            buyer_phone=row.get("buyer_phone"),
+            buyer_company_name=row.get("buyer_company_name"),
+            buyer_kyc_status=row.get("buyer_kyc_status"),
+            buyer_country=row.get("buyer_country"),
             purchase_type=row["purchase_type"],
             quantity=row["quantity"],
             offered_price=row.get("offered_price"),

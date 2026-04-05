@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     # ── App ───────────────────────────────────────────────────────────────────
     APP_NAME: str = "MarineXchange Africa API"
-    APP_VERSION: str = "1.0.0"
+    APP_VERSION: str = "1.1.0"
     ENVIRONMENT: str = "development"
     DEBUG: bool = False
 

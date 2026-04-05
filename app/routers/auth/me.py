@@ -5,22 +5,28 @@ GET    /auth/me              — get current user profile
 GET    /auth/me/roles        — get current user's roles
 PATCH  /auth/me/profile      — update name, phone, company, country
 PATCH  /auth/me/password     — change password (requires current password)
+POST   /auth/me/set-password — set password via invite link (no current password)
 POST   /auth/me/avatar       — upload profile photo
 POST   /auth/refresh         — exchange refresh_token for new access_token
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel
 
 from app.deps import CurrentUser, DbConn
 from app.schemas.auth import (
     AuthTokenResponse,
     ChangePasswordBody,
+    SetPasswordBody,
     UpdateProfileBody,
     UserProfileResponse,
 )
-from app.services.auth_service import build_profile_response, get_supabase_client
+from app.services.auth_service import (
+    build_profile_response,
+    get_supabase_admin_client,
+    get_supabase_client,
+)
 from app.services import profile_service
 
 router = APIRouter(tags=["Auth — Profile"])
@@ -116,6 +122,33 @@ async def update_profile(
     current_user: CurrentUser,
 ):
     return await profile_service.update_profile(db, current_user, body)
+
+
+@router.post(
+    "/me/set-password",
+    summary="Set password via invite link",
+    description=(
+        "Used by staff accounts on first login. The invite access token is sent as "
+        "Bearer — no current password is required. Clears the requires_password_change flag."
+    ),
+)
+async def set_password(
+    body: SetPasswordBody,
+    current_user: CurrentUser,
+) -> dict:
+    from uuid import UUID
+    admin_client = await get_supabase_admin_client()
+    try:
+        await admin_client.auth.admin.update_user_by_id(
+            str(current_user["id"]),
+            {"password": body.new_password, "user_metadata": {"requires_password_change": False}},
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to set password: {exc}",
+        )
+    return {"message": "Password set successfully. You can now log in with your new password."}
 
 
 @router.patch(

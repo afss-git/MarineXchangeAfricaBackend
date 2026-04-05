@@ -12,8 +12,6 @@ POST /auth/internal/create-admin        — admin creates admin/finance-admin ac
 """
 from __future__ import annotations
 
-import secrets
-import string
 from typing import Annotated
 from uuid import UUID
 
@@ -28,6 +26,7 @@ from app.schemas.auth import (
     BootstrapAdminRequest,
     CreateAdminRequest,
     CreateAgentRequest,
+    CreateStaffResponse,
     LoginRequest,
     MessageResponse,
     UserProfileResponse,
@@ -237,13 +236,12 @@ async def agent_logout(
 
 @router.post(
     "/internal/create-agent",
-    response_model=UserProfileResponse,
+    response_model=CreateStaffResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create agent account [Admin only]",
     description=(
         "Creates a verification_agent or buyer_agent account. "
-        "A temporary password is generated and sent to the agent's email. "
-        "Agent must change password on first login."
+        "Returns the profile and a one-time invite link for the staff member to set their password."
     ),
 )
 async def create_agent(
@@ -252,12 +250,9 @@ async def create_agent(
     request: Request,
     db: DbConn,
 ):
-    temp_password = _generate_temp_password()
-
-    profile = await create_internal_user(
+    profile, invite_link, email_sent = await create_internal_user(
         db=db,
         email=payload.email,
-        temp_password=temp_password,
         full_name=payload.full_name,
         company_name=None,
         company_reg_no=None,
@@ -265,6 +260,7 @@ async def create_agent(
         country=payload.country,
         roles=[payload.agent_type],
         created_by=UUID(str(current_user["id"])),
+        invited_by_name=current_user.get("full_name") or "MarineXchange Admin",
         request=request,
     )
 
@@ -279,21 +275,21 @@ async def create_agent(
         metadata={
             "created_by": str(current_user["id"]),
             "ip": current_user["_client_ip"],
+            "invite_email_sent": email_sent,
         },
     )
 
-    return build_profile_response(profile)
+    return CreateStaffResponse(profile=build_profile_response(profile), invite_link=invite_link, email_sent=email_sent)
 
 
 @router.post(
     "/internal/create-admin",
-    response_model=UserProfileResponse,
+    response_model=CreateStaffResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create admin or finance_admin account [Admin only]",
     description=(
         "Creates an admin or finance_admin account. "
-        "Only existing admins can create new admin accounts. "
-        "This action is fully audited."
+        "Returns the profile and a one-time invite link for the staff member to set their password."
     ),
 )
 async def create_admin_user(
@@ -302,12 +298,9 @@ async def create_admin_user(
     request: Request,
     db: DbConn,
 ):
-    temp_password = _generate_temp_password()
-
-    profile = await create_internal_user(
+    profile, invite_link, email_sent = await create_internal_user(
         db=db,
         email=payload.email,
-        temp_password=temp_password,
         full_name=payload.full_name,
         company_name=None,
         company_reg_no=None,
@@ -315,6 +308,7 @@ async def create_admin_user(
         country=payload.country,
         roles=[payload.role],
         created_by=UUID(str(current_user["id"])),
+        invited_by_name=current_user.get("full_name") or "MarineXchange Admin",
         request=request,
     )
 
@@ -330,27 +324,10 @@ async def create_admin_user(
             "created_by": str(current_user["id"]),
             "ip": current_user["_client_ip"],
             "internal_account": True,
+            "invite_email_sent": email_sent,
         },
     )
 
-    return build_profile_response(profile)
+    return CreateStaffResponse(profile=build_profile_response(profile), invite_link=invite_link, email_sent=email_sent)
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _generate_temp_password(length: int = 20) -> str:
-    """
-    Generates a cryptographically secure temporary password.
-    Satisfies the platform's password policy (upper, lower, digit, special).
-    """
-    alphabet = string.ascii_letters + string.digits + "!@#$%^&*()"
-    while True:
-        pwd = "".join(secrets.choice(alphabet) for _ in range(length))
-        # Ensure policy compliance
-        if (
-            any(c.isupper() for c in pwd)
-            and any(c.islower() for c in pwd)
-            and any(c.isdigit() for c in pwd)
-            and any(c in "!@#$%^&*()" for c in pwd)
-        ):
-            return pwd
