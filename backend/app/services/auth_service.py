@@ -8,9 +8,10 @@ Security principles:
 - All logins are audited
 - Role checks happen before any data is returned
 """
+from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Tuple
+from typing import Any
 from uuid import UUID
 
 import asyncpg
@@ -49,8 +50,8 @@ async def create_user_with_profile(
     email: str,
     password: str,
     full_name: str,
-    company_name: Optional[str],
-    company_reg_no: Optional[str],
+    company_name: str | None,
+    company_reg_no: str | None,
     phone: str,
     country: str,
     roles: list[str],
@@ -63,7 +64,7 @@ async def create_user_with_profile(
     Returns the created profile record.
     """
     supabase = await get_supabase_client()
-    auth_user_id: Optional[str] = None
+    auth_user_id: str | None = None
 
     try:
         # Step 1: Create auth user in Supabase
@@ -156,31 +157,24 @@ async def create_internal_user(
     db: asyncpg.Connection,
     email: str,
     full_name: str,
-    company_name: Optional[str],
-    company_reg_no: Optional[str],
+    company_name: str | None,
+    company_reg_no: str | None,
     phone: str,
     country: str,
     roles: list[str],
     created_by: UUID,
     invited_by_name: str,
     request: Request,
-    custom_password: Optional[str] = None,
-) -> Tuple[dict, str, Optional[str], bool]:
+) -> tuple[dict, str, bool]:
     """
-    Creates an internal user (agent, admin, finance_admin).
-
-    Returns: (profile_dict, password, invite_link_or_None, email_sent)
-    - password: the temp password (auto-generated or admin-supplied)
-    - invite_link: a Supabase one-time link for password setup, or None if generation failed
-    - email_sent: whether the invite email was dispatched via Resend
+    Creates an internal user (agent, admin, finance_admin) using the admin client.
+    Uses Supabase's invite link flow — no temp password is set.
+    The staff member receives a one-time link via Resend to set their own password.
     """
-    import secrets
-    import string
-    import httpx
     from app.services.notification_service import send_staff_welcome
 
     admin_client = await get_supabase_admin_client()
-    auth_user_id: Optional[str] = None
+    auth_user_id: str | None = None
 
     ROLE_LABELS = {
         "verification_agent": "Verification Agent",
@@ -189,27 +183,25 @@ async def create_internal_user(
         "finance_admin": "Finance Administrator",
     }
     role_label = ROLE_LABELS.get(roles[0], roles[0].replace("_", " ").title())
-    login_url = f"{settings.FRONTEND_URL.rstrip('/')}/login"
-    set_password_url = f"{settings.FRONTEND_URL.rstrip('/')}/auth/set-password"
-
-    # Use admin-supplied password or generate a secure random one
-    if custom_password:
-        password = custom_password
-    else:
-        alphabet = string.ascii_letters + string.digits + "!@#$%"
-        while True:
-            password = "".join(secrets.choice(alphabet) for _ in range(16))
-            if (any(c.isupper() for c in password)
-                    and any(c.islower() for c in password)
-                    and any(c.isdigit() for c in password)
-                    and any(c in "!@#$%" for c in password)):
-                break
+    redirect_to = f"{settings.FRONTEND_URL}/auth/set-password"
 
     try:
-        # Create the auth user with the password
+        import secrets as _secrets
+        import string as _string
+        import httpx as _httpx
+
+        # Generate a secure temporary password
+        _alphabet = _string.ascii_letters + _string.digits + "!@#$%"
+        while True:
+            temp_pw = "".join(_secrets.choice(_alphabet) for _ in range(16))
+            if (any(c.isupper() for c in temp_pw) and any(c.islower() for c in temp_pw)
+                    and any(c.isdigit() for c in temp_pw) and any(c in "!@#$%" for c in temp_pw)):
+                break
+
+        # Step 1: Create user with a real password
         auth_response = await admin_client.auth.admin.create_user({
             "email": email.lower().strip(),
-            "password": password,
+            "password": temp_pw,
             "email_confirm": True,
             "user_metadata": {
                 "full_name": full_name,
@@ -227,34 +219,26 @@ async def create_internal_user(
 
         auth_user_id = str(auth_response.user.id)
 
-        # Try to generate a one-time password-reset link via direct HTTP to Supabase REST API.
-        # The gotrue Python SDK routes generate_link() to the wrong endpoint, so we call directly.
-        invite_link: Optional[str] = None
+        # Step 2: Try to generate a one-time setup link via direct REST call
+        # (the gotrue SDK routes generate_link to the wrong endpoint returning None)
+        # invite_link falls back to the temp password so admin can share it manually
+        invite_link: str = temp_pw
         try:
-            async with httpx.AsyncClient(timeout=10.0) as http:
-                gen_resp = await http.post(
+            async with _httpx.AsyncClient(timeout=10.0) as _http:
+                _r = await _http.post(
                     f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1/admin/generate_link",
                     headers={
                         "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
                         "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
                         "Content-Type": "application/json",
                     },
-                    json={
-                        "type": "recovery",
-                        "email": email.lower().strip(),
-                        "redirect_to": set_password_url,
-                    },
+                    json={"type": "recovery", "email": email.lower().strip(), "redirect_to": redirect_to},
                 )
-            if gen_resp.status_code in (200, 201):
-                invite_link = gen_resp.json().get("action_link")
-                if invite_link:
-                    logger.info("Generated invite link for %s", email)
-                else:
-                    logger.warning("generate_link returned no action_link for %s: %s", email, gen_resp.text)
-            else:
-                logger.warning("generate_link HTTP %s for %s: %s", gen_resp.status_code, email, gen_resp.text[:200])
-        except Exception as link_exc:
-            logger.warning("generate_link failed for %s (non-fatal): %s", email, link_exc)
+            _link = _r.json().get("action_link") if _r.status_code in (200, 201) else None
+            if _link:
+                invite_link = _link
+        except Exception as _le:
+            logger.warning("generate_link error for %s (non-fatal): %s", email, _le)
 
         profile = await db.fetchrow(
             """
@@ -273,18 +257,17 @@ async def create_internal_user(
             roles,
         )
 
-        # Send invite email — failure does NOT block account creation
+        # Send invite email via Resend — failure does NOT block account creation
         email_sent = await send_staff_welcome(
             staff_email=email.lower().strip(),
             staff_name=full_name,
             role_label=role_label,
-            password=password,
             invite_link=invite_link,
-            login_url=login_url,
             invited_by_name=invited_by_name,
+            temp_password=temp_pw,
         )
 
-        return dict(profile), password, invite_link, email_sent
+        return dict(profile), invite_link, email_sent
 
     except HTTPException:
         raise
@@ -340,7 +323,7 @@ async def create_first_admin(
     - Guarded at the endpoint layer: only callable when zero admin profiles exist.
     """
     admin_client = await get_supabase_admin_client()
-    auth_user_id: Optional[str] = None
+    auth_user_id: str | None = None
 
     try:
         auth_response = await admin_client.auth.admin.create_user({
@@ -417,9 +400,9 @@ async def login_user(
     db: asyncpg.Connection,
     email: str,
     password: str,
-    required_role: Optional[str],
+    required_role: str | None,
     request: Request,
-    required_role_any: Optional[list] = None,
+    required_role_any: list[str] | None = None,
 ) -> AuthTokenResponse:
     """
     Authenticates a user via Supabase, then validates their role.
@@ -590,7 +573,7 @@ def build_profile_response(profile: dict | asyncpg.Record) -> UserProfileRespons
 # ── Private helpers ───────────────────────────────────────────────────────────
 
 async def _cleanup_orphan_auth_user(
-    auth_user_id: Optional[str],
+    auth_user_id: str | None,
     use_admin: bool = False,
 ) -> None:
     """

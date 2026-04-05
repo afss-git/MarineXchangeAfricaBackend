@@ -4,7 +4,7 @@ All inputs use strict validation — extra fields are forbidden.
 """
 from __future__ import annotations
 
-from typing import Annotated, Optional
+from typing import Annotated
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
@@ -161,7 +161,6 @@ class CreateAgentRequest(BaseModel):
     agent_type: str = Field(description="verification_agent or buyer_agent")
     phone: PhoneField
     country: str = Field(min_length=2, max_length=100)
-    custom_password: Optional[str] = None  # If None, a secure password is auto-generated
 
     @field_validator("agent_type")
     @classmethod
@@ -185,7 +184,6 @@ class CreateAdminRequest(BaseModel):
     role: str = Field(description="admin or finance_admin")
     phone: PhoneField
     country: str = Field(min_length=2, max_length=100)
-    custom_password: Optional[str] = None  # If None, a secure password is auto-generated
 
     @field_validator("role")
     @classmethod

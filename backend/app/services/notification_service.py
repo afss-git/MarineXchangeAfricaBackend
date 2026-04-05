@@ -5,9 +5,10 @@ All KYC status-change emails are sent from here.
 Functions are async-safe and never raise — failures are logged but
 do NOT block the primary operation.
 """
+from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
@@ -557,22 +558,21 @@ async def send_staff_welcome(
     staff_email: str,
     staff_name: str,
     role_label: str,
-    password: str,
-    login_url: str,
+    invite_link: str,
     invited_by_name: str,
-    invite_link: Optional[str] = None,
+    temp_password: str = "",
 ) -> bool:
     """
     Sent to a newly created staff account (agent or admin).
-    Contains their temporary password and optionally a one-time setup link.
+    Contains the temporary password and optionally a one-time setup link.
     Returns True if Resend accepted the email, False otherwise.
     """
-    # Build the primary CTA — prefer one-time link, fall back to login page
-    if invite_link:
-        cta_button = f"""
-        <p style="margin:8px 0 4px;color:#374151;font-size:14px;">
-            Or click the button below to set your own password (link expires in 24 hours):
-        </p>
+    # If invite_link looks like a URL, show it as a clickable button
+    # If it's the temp password (fallback), show login link instead
+    login_url = f"https://marine-xchange-africa-fronend.vercel.app/login"
+    if invite_link.startswith("http"):
+        link_section = f"""
+        <p style="margin-top:16px;">Or click below to set your own password (link expires in 24 hours):</p>
         <p style="margin:16px 0 32px;">
             <a href="{invite_link}"
                style="background:#0057A8;color:#ffffff;padding:12px 28px;border-radius:6px;
@@ -581,14 +581,16 @@ async def send_staff_welcome(
             </a>
         </p>"""
     else:
-        cta_button = f"""
-        <p style="margin:16px 0 32px;">
+        link_section = f"""
+        <p style="margin:24px 0;">
             <a href="{login_url}"
                style="background:#0057A8;color:#ffffff;padding:12px 28px;border-radius:6px;
                       text-decoration:none;font-weight:600;display:inline-block;">
                 Log In Now
             </a>
         </p>"""
+
+    password_to_show = temp_password if temp_password else invite_link
 
     return await _send(
         to=staff_email,
@@ -598,24 +600,19 @@ async def send_staff_welcome(
         <p>Dear {staff_name},</p>
         <p>You have been invited to join <strong>MarineXchange Africa</strong> as a
         <strong>{role_label}</strong> by {invited_by_name}.</p>
-        <p>Your login credentials are below. Please log in and
-        <strong>change your password</strong> after your first login.</p>
-        <table style="width:100%;border:1px solid #e5e7eb;border-radius:8px;
-                      background:#f9fafb;border-spacing:0;margin:24px 0;">
+        <p>Your temporary login credentials are below. Please log in and change your password after first login.</p>
+        <table style="width:100%;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;border-spacing:0;margin:20px 0;">
             <tr>
-                <td style="padding:10px 14px;font-weight:600;color:#374151;white-space:nowrap;">Email</td>
-                <td style="padding:10px 14px;font-family:monospace;color:#111827;">{staff_email}</td>
+                <td style="padding:10px 14px;font-weight:600;color:#374151;">Email</td>
+                <td style="padding:10px 14px;font-family:monospace;">{staff_email}</td>
             </tr>
             <tr style="border-top:1px solid #e5e7eb;">
-                <td style="padding:10px 14px;font-weight:600;color:#374151;white-space:nowrap;">Password</td>
-                <td style="padding:10px 14px;font-family:monospace;font-size:16px;
-                           font-weight:700;color:#0057A8;letter-spacing:1px;">{password}</td>
+                <td style="padding:10px 14px;font-weight:600;color:#374151;">Password</td>
+                <td style="padding:10px 14px;font-family:monospace;font-size:16px;font-weight:700;color:#0057A8;letter-spacing:1px;">{password_to_show}</td>
             </tr>
         </table>
-        {cta_button}
-        <p style="color:#6b7280;font-size:13px;">
-            If you did not expect this invitation, please ignore this email or contact our support team.
-        </p>
+        {link_section}
+        <p style="color:#6b7280;font-size:13px;">If you did not expect this invitation, please ignore this email.</p>
         <p>Best regards,<br/><strong>MarineXchange Africa</strong></p>
         </div>
         """,
