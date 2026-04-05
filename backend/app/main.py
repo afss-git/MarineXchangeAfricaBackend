@@ -195,6 +195,12 @@ app.include_router(exchange_rates_router, prefix="/api/v1")
 
 # ── Health Check ──────────────────────────────────────────────────────────────
 
+@app.get("/health/v2check", tags=["Health"], include_in_schema=False)
+async def v2_check():
+    """Probe endpoint — only exists in v1.1+ code."""
+    return {"v2": True, "commit": "1edfbf8"}
+
+
 @app.get("/health", tags=["Health"], include_in_schema=False)
 async def health_check():
     """
