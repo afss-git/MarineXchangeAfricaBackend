@@ -62,10 +62,12 @@ class Settings(BaseSettings):
     # ── Security ──────────────────────────────────────────────────────────────
     CLOUDFLARE_TUNNEL_SECRET: str = ""
 
-    # ── SMS (Twilio) ──────────────────────────────────────────────────────────
+    # ── Twilio (SMS OTP + Agent Voice Calls) ─────────────────────────────────
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_AUTH_TOKEN: str = ""
-    TWILIO_FROM_NUMBER: str = ""    # E.164 format: +12345678901
+    TWILIO_VERIFY_SERVICE_SID: str = ""     # Twilio Verify service for SMS OTP
+    TWILIO_PHONE_NUMBER: str = ""           # Primary Twilio number (E.164)
+    TWILIO_WEBHOOK_URL: str = ""            # Base URL for Twilio callbacks
 
     # ── Deals ─────────────────────────────────────────────────────────────────
     DEAL_PORTAL_TOKEN_EXPIRY_HOURS: int = 48

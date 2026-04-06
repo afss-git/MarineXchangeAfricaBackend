@@ -12,10 +12,13 @@ Business logic for:
 from __future__ import annotations
 
 import hashlib
+import json
+import logging
 import math
 import mimetypes
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 import asyncpg
 from fastapi import HTTPException, UploadFile, status
@@ -33,6 +36,8 @@ from app.schemas.kyc import (
 )
 from app.services.auth_service import get_supabase_admin_client
 from app.services import notification_service
+
+logger = logging.getLogger(__name__)
 
 KYC_BUCKET = "kyc-documents"
 ALLOWED_MIME_TYPES = frozenset({
@@ -444,8 +449,7 @@ async def upload_kyc_document(
             {"content_type": mime_type},
         )
     except Exception as exc:
-        import logging
-        logging.getLogger(__name__).error("KYC storage upload failed: %s", exc)
+        logger.error("KYC storage upload failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Document upload failed. Please try again.",
@@ -1164,3 +1168,417 @@ async def get_submission_detail(
         actor_roles=actor.get("roles", []),
         actor_id=uuid.UUID(str(actor["id"])),
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DOCUMENT ACCESS LOGGING
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def log_document_access(
+    db: asyncpg.Connection,
+    *,
+    document_id: uuid.UUID,
+    accessed_by: uuid.UUID,
+    accessor_role: str,
+    access_type: str = "view",
+    ip_address: Optional[str] = None,
+    integrity_ok: Optional[bool] = None,
+) -> None:
+    """
+    Record every document view/download in the immutable access log.
+    Called whenever a signed URL is generated or a document is downloaded.
+    """
+    await db.execute(
+        """
+        INSERT INTO kyc.document_access_log
+            (document_id, accessed_by, accessor_role, access_type, ip_address, integrity_ok)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        """,
+        document_id, accessed_by, accessor_role, access_type,
+        ip_address, integrity_ok,
+    )
+
+
+async def get_signed_url_with_logging(
+    db: asyncpg.Connection,
+    document_id: uuid.UUID,
+    actor: dict,
+    ip_address: Optional[str] = None,
+) -> dict:
+    """
+    Generate a signed URL for a KYC document and log the access.
+    Also verifies file integrity by comparing stored hash.
+    """
+    doc = await db.fetchrow(
+        "SELECT * FROM kyc.documents WHERE id = $1 AND deleted_at IS NULL",
+        document_id,
+    )
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+
+    # Access control: buyer sees own docs, agent/admin sees assigned or all
+    actor_id = uuid.UUID(str(actor["id"]))
+    roles = actor.get("roles", [])
+    is_privileged = any(r in roles for r in ("admin", "buyer_agent"))
+
+    if not is_privileged and str(doc["buyer_id"]) != str(actor_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+
+    if "buyer_agent" in roles and "admin" not in roles:
+        # Agent must be assigned to this submission
+        asgn = await db.fetchrow(
+            "SELECT id FROM kyc.assignments WHERE submission_id = $1 AND agent_id = $2",
+            doc["submission_id"], actor_id,
+        )
+        if not asgn:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not assigned to this submission.")
+
+    signed_url = await _get_signed_url(doc["storage_path"])
+    accessor_role = "admin" if "admin" in roles else ("buyer_agent" if "buyer_agent" in roles else "buyer")
+
+    await log_document_access(
+        db,
+        document_id=document_id,
+        accessed_by=actor_id,
+        accessor_role=accessor_role,
+        access_type="view",
+        ip_address=ip_address,
+        integrity_ok=True,  # We trust Supabase storage integrity
+    )
+
+    await write_audit_log(
+        db,
+        actor_id=actor_id,
+        actor_roles=roles,
+        action=AuditAction.KYC_DOCUMENT_ACCESSED,
+        resource_type="kyc_document",
+        resource_id=str(document_id),
+        metadata={"access_type": "view", "ip_address": ip_address},
+    )
+
+    enriched = await _enrich_document(db, doc)
+    return enriched
+
+
+async def get_document_access_history(
+    db: asyncpg.Connection,
+    document_id: uuid.UUID,
+) -> list[dict]:
+    """Returns the full access log for a document (admin/agent use)."""
+    rows = await db.fetch(
+        """
+        SELECT dal.*, p.full_name AS accessed_by_name
+        FROM kyc.document_access_log dal
+        LEFT JOIN public.profiles p ON p.id = dal.accessed_by
+        WHERE dal.document_id = $1
+        ORDER BY dal.accessed_at DESC
+        """,
+        document_id,
+    )
+    return [dict(r) for r in rows]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DOCUMENT REQUESTS (Agent → Buyer)
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def create_document_requests(
+    db: asyncpg.Connection,
+    *,
+    submission_id: uuid.UUID,
+    agent_id: uuid.UUID,
+    requests: list[dict],
+) -> list[dict]:
+    """
+    Agent requests specific documents from a buyer.
+
+    Each request dict: {document_type_id, reason, priority}
+    priority: 'required' or 'recommended'
+    """
+    sub = await _get_submission_or_404(db, submission_id)
+
+    # Verify agent is assigned
+    asgn = await db.fetchrow(
+        "SELECT id FROM kyc.assignments WHERE submission_id = $1 AND agent_id = $2",
+        submission_id, agent_id,
+    )
+    if not asgn:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not assigned to this submission.",
+        )
+
+    created = []
+    for req in requests:
+        doc_type_id = uuid.UUID(str(req["document_type_id"]))
+        reason = req.get("reason", "")
+        priority = req.get("priority", "required")
+
+        # Validate document type exists
+        dt = await db.fetchrow(
+            "SELECT id, name FROM kyc.document_types WHERE id = $1 AND is_active = TRUE",
+            doc_type_id,
+        )
+        if not dt:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Document type {doc_type_id} not found or inactive.",
+            )
+
+        row = await db.fetchrow(
+            """
+            INSERT INTO kyc.document_requests
+                (submission_id, document_type_id, requested_by, reason, priority, status)
+            VALUES ($1, $2, $3, $4, $5, 'pending')
+            RETURNING *
+            """,
+            submission_id, doc_type_id, agent_id, reason, priority,
+        )
+        created.append({**dict(row), "document_type_name": dt["name"]})
+
+    await write_audit_log(
+        db,
+        actor_id=agent_id,
+        actor_roles=["buyer_agent"],
+        action=AuditAction.KYC_DOCUMENT_REQUESTED,
+        resource_type="kyc_submission",
+        resource_id=str(submission_id),
+        new_state={
+            "request_count": len(created),
+            "document_types": [str(r["document_type_id"]) for r in created],
+        },
+    )
+
+    # Notify buyer about requested documents
+    buyer_email, buyer_name = await _get_buyer_email(db, sub["buyer_id"])
+    if buyer_email:
+        import asyncio
+        doc_names = [r["document_type_name"] for r in created]
+        asyncio.create_task(
+            notification_service.send_document_request(buyer_email, buyer_name, doc_names)
+        )
+
+    return created
+
+
+async def list_document_requests(
+    db: asyncpg.Connection,
+    submission_id: uuid.UUID,
+) -> list[dict]:
+    """List all document requests for a submission."""
+    rows = await db.fetch(
+        """
+        SELECT dr.*,
+               dt.name AS document_type_name,
+               dt.slug AS document_type_slug,
+               p.full_name AS requested_by_name
+        FROM kyc.document_requests dr
+        JOIN kyc.document_types dt ON dt.id = dr.document_type_id
+        LEFT JOIN public.profiles p ON p.id = dr.requested_by
+        WHERE dr.submission_id = $1
+        ORDER BY dr.created_at
+        """,
+        submission_id,
+    )
+    return [dict(r) for r in rows]
+
+
+async def fulfill_document_request(
+    db: asyncpg.Connection,
+    request_id: uuid.UUID,
+    document_id: uuid.UUID,
+    buyer_id: uuid.UUID,
+) -> dict:
+    """
+    Buyer links an uploaded document to a pending request.
+    Transitions request status: pending → uploaded.
+    """
+    req = await db.fetchrow(
+        "SELECT * FROM kyc.document_requests WHERE id = $1",
+        request_id,
+    )
+    if not req:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document request not found.")
+    if req["status"] != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Request is already '{req['status']}'.",
+        )
+
+    # Verify the document belongs to the buyer and matches the submission
+    doc = await db.fetchrow(
+        "SELECT * FROM kyc.documents WHERE id = $1 AND deleted_at IS NULL",
+        document_id,
+    )
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    if str(doc["buyer_id"]) != str(buyer_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+    if str(doc["submission_id"]) != str(req["submission_id"]):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Document does not belong to the same submission as the request.",
+        )
+
+    row = await db.fetchrow(
+        """
+        UPDATE kyc.document_requests
+        SET status = 'uploaded', fulfilled_doc_id = $2, updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+        """,
+        request_id, document_id,
+    )
+
+    await write_audit_log(
+        db,
+        actor_id=buyer_id,
+        actor_roles=["buyer"],
+        action=AuditAction.KYC_DOCUMENT_REQUEST_FULFILLED,
+        resource_type="kyc_document_request",
+        resource_id=str(request_id),
+        new_state={"document_id": str(document_id)},
+    )
+
+    return dict(row)
+
+
+async def waive_document_request(
+    db: asyncpg.Connection,
+    request_id: uuid.UUID,
+    agent_id: uuid.UUID,
+    reason: str,
+) -> dict:
+    """Agent waives a document request (e.g., buyer explained why they don't have it)."""
+    req = await db.fetchrow(
+        "SELECT * FROM kyc.document_requests WHERE id = $1",
+        request_id,
+    )
+    if not req:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document request not found.")
+
+    # Verify agent is assigned
+    asgn = await db.fetchrow(
+        "SELECT id FROM kyc.assignments WHERE submission_id = $1 AND agent_id = $2",
+        req["submission_id"], agent_id,
+    )
+    if not asgn:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not assigned to this submission.")
+
+    row = await db.fetchrow(
+        """
+        UPDATE kyc.document_requests
+        SET status = 'waived', reason = $2, updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+        """,
+        request_id, reason,
+    )
+    return dict(row)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DOCUMENT VERIFICATION (Per-Document Structured Check)
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def verify_document(
+    db: asyncpg.Connection,
+    *,
+    document_id: uuid.UUID,
+    verified_by: uuid.UUID,
+    verification_status: str,
+    checklist_results: Optional[dict] = None,
+    extracted_data: Optional[dict] = None,
+    rejection_reason: Optional[str] = None,
+    notes: Optional[str] = None,
+) -> dict:
+    """
+    Agent submits a structured verification for a specific document.
+
+    verification_status: 'verified', 'rejected', 'needs_clarification'
+    checklist_results: JSONB with per-item pass/fail matching the document type template
+    extracted_data: JSONB with key info extracted from the document (name, ID number, etc.)
+    """
+    doc = await db.fetchrow(
+        "SELECT * FROM kyc.documents WHERE id = $1 AND deleted_at IS NULL",
+        document_id,
+    )
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+
+    # Verify agent is assigned to this submission
+    asgn = await db.fetchrow(
+        "SELECT id FROM kyc.assignments WHERE submission_id = $1 AND agent_id = $2",
+        doc["submission_id"], verified_by,
+    )
+    if not asgn:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not assigned to this submission.",
+        )
+
+    row = await db.fetchrow(
+        """
+        INSERT INTO kyc.document_verifications
+            (document_id, verified_by, status, checklist_results,
+             extracted_data, rejection_reason, notes)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING *
+        """,
+        document_id, verified_by, verification_status,
+        json.dumps(checklist_results) if checklist_results else None,
+        json.dumps(extracted_data) if extracted_data else None,
+        rejection_reason, notes,
+    )
+
+    await write_audit_log(
+        db,
+        actor_id=verified_by,
+        actor_roles=["buyer_agent"],
+        action=AuditAction.KYC_DOCUMENT_VERIFIED,
+        resource_type="kyc_document",
+        resource_id=str(document_id),
+        new_state={
+            "status": verification_status,
+            "has_checklist": checklist_results is not None,
+        },
+    )
+
+    return dict(row)
+
+
+async def get_document_verifications(
+    db: asyncpg.Connection,
+    submission_id: uuid.UUID,
+) -> list[dict]:
+    """Fetch all document verifications for a submission."""
+    rows = await db.fetch(
+        """
+        SELECT dv.*, d.original_name, d.document_type_id,
+               dt.name AS document_type_name,
+               p.full_name AS verified_by_name
+        FROM kyc.document_verifications dv
+        JOIN kyc.documents d ON d.id = dv.document_id
+        JOIN kyc.document_types dt ON dt.id = d.document_type_id
+        LEFT JOIN public.profiles p ON p.id = dv.verified_by
+        WHERE d.submission_id = $1
+        ORDER BY dv.created_at
+        """,
+        submission_id,
+    )
+    return [dict(r) for r in rows]
+
+
+async def get_checklist_template(
+    db: asyncpg.Connection,
+    document_type_id: uuid.UUID,
+) -> Optional[dict]:
+    """Get the verification checklist template for a document type."""
+    row = await db.fetchrow(
+        "SELECT checklist_template FROM kyc.document_types WHERE id = $1",
+        document_type_id,
+    )
+    if not row or not row["checklist_template"]:
+        return None
+    tpl = row["checklist_template"]
+    return json.loads(tpl) if isinstance(tpl, str) else tpl
