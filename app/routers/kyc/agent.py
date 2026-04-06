@@ -41,6 +41,7 @@ from app.services.kyc_service import (
     get_checklist_template,
     get_document_access_history,
     get_document_verifications,
+    get_or_create_draft_submission,
     get_signed_url_with_logging,
     get_submission_detail,
     list_agent_assignments,
@@ -257,6 +258,42 @@ async def waive_doc_request(
 ):
     agent_id = UUID(str(current_user["id"]))
     return await waive_document_request(db, request_id, agent_id, payload.reason)
+
+
+@router.post(
+    "/agent/buyer/{buyer_id}/ensure-submission",
+    summary="Get or create KYC submission for buyer",
+    description=(
+        "Called by an agent when assigned to a purchase request. "
+        "Returns the buyer's current draft KYC submission, or creates one. "
+        "This lets the agent request documents before the buyer has formally started KYC."
+    ),
+)
+async def ensure_buyer_submission(
+    buyer_id: UUID,
+    db: DbConn,
+    current_user: KycAgentOrAdmin,
+):
+    try:
+        sub = await get_or_create_draft_submission(db, buyer_id)
+        return {
+            "submission_id": str(sub["id"]),
+            "status": sub["status"],
+            "cycle_number": sub["cycle_number"],
+        }
+    except HTTPException:
+        # Submission is locked (submitted/under_review) — return existing submission id
+        row = await db.fetchrow(
+            "SELECT id, status, cycle_number FROM kyc.submissions WHERE buyer_id = $1 ORDER BY created_at DESC LIMIT 1",
+            buyer_id,
+        )
+        if not row:
+            raise
+        return {
+            "submission_id": str(row["id"]),
+            "status": row["status"],
+            "cycle_number": row["cycle_number"],
+        }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
