@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useAuth } from "@/lib/auth"
 import { PageTour } from "@/components/tour/tour-engine"
 import { KYC_TOUR } from "@/components/tour/tour-definitions"
@@ -16,9 +16,13 @@ import {
   AlertCircle,
   CheckCircle2,
   XCircle,
+  Phone,
+  Loader2,
+  FileQuestion,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import {
   Table,
   TableBody,
@@ -28,7 +32,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
-import { type KycStatusResponse } from "@/lib/api"
+import { kycBuyer, type DocumentRequestResponse } from "@/lib/api"
 import { useKycStatus } from "@/lib/hooks"
 
 const nextSteps = [
@@ -121,6 +125,208 @@ function PageSkeleton() {
     </div>
   )
 }
+
+// ── Phone OTP Verification Card ───────────────────────────────────────────────
+
+function PhoneVerificationCard() {
+  const { user } = useAuth()
+  const [phone, setPhone] = useState("")
+  const [code, setCode] = useState("")
+  const [step, setStep] = useState<"input" | "verify" | "done">("input")
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // If already verified, show done state
+  const isVerified = user?.phone_verified === true
+  if (isVerified) {
+    return (
+      <div className="bg-white rounded-xl border border-border shadow-sm p-5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center shrink-0">
+            <Phone className="w-5 h-5 text-success" />
+          </div>
+          <div>
+            <p className="font-semibold text-text-primary flex items-center gap-2">
+              Phone Verified <CheckCircle2 className="w-4 h-4 text-success" />
+            </p>
+            <p className="text-sm text-text-secondary">{user?.phone ?? "Verified"}</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  async function handleSendOtp() {
+    if (!phone.trim() || !phone.startsWith("+")) {
+      setError("Enter a valid phone number in E.164 format (e.g. +234...)")
+      return
+    }
+    setLoading(true)
+    setError(null)
+    try {
+      await kycBuyer.sendPhoneOtp(phone.trim())
+      setStep("verify")
+    } catch (e: unknown) {
+      setError((e as Error)?.message ?? "Failed to send OTP")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleVerifyOtp() {
+    if (!code.trim()) { setError("Enter the OTP code from your SMS."); return }
+    setLoading(true)
+    setError(null)
+    try {
+      await kycBuyer.verifyPhoneOtp(phone.trim(), code.trim())
+      setStep("done")
+    } catch (e: unknown) {
+      setError((e as Error)?.message ?? "Invalid or expired code")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (step === "done") {
+    return (
+      <div className="bg-white rounded-xl border border-success/20 shadow-sm p-5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center">
+            <CheckCircle2 className="w-5 h-5 text-success" />
+          </div>
+          <div>
+            <p className="font-semibold text-success">Phone Verified Successfully</p>
+            <p className="text-sm text-text-secondary">{phone}</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-border shadow-sm p-5 space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full bg-ocean/10 flex items-center justify-center shrink-0">
+          <Phone className="w-5 h-5 text-ocean" />
+        </div>
+        <div>
+          <p className="font-semibold text-text-primary">Verify Your Phone Number</p>
+          <p className="text-sm text-text-secondary">
+            We&apos;ll send a one-time code via SMS to verify your phone number.
+          </p>
+        </div>
+      </div>
+
+      {step === "input" ? (
+        <div className="flex gap-2">
+          <Input
+            placeholder="+234 801 234 5678"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            className="flex-1"
+          />
+          <Button onClick={handleSendOtp} disabled={loading} className="bg-ocean hover:bg-ocean-dark text-white gap-1.5">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+            Send Code
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm text-text-secondary">
+            Enter the 6-digit code sent to <strong>{phone}</strong>
+          </p>
+          <div className="flex gap-2">
+            <Input
+              placeholder="Enter code..."
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              maxLength={8}
+              className="flex-1"
+            />
+            <Button onClick={handleVerifyOtp} disabled={loading} className="bg-ocean hover:bg-ocean-dark text-white gap-1.5">
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+              Verify
+            </Button>
+          </div>
+          <button
+            onClick={() => { setStep("input"); setCode(""); setError(null) }}
+            className="text-xs text-ocean hover:underline"
+          >
+            Change number or resend
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <div className="flex items-center gap-2 p-3 bg-danger/10 border border-danger/20 rounded-lg text-danger text-sm">
+          <AlertCircle className="w-4 h-4 shrink-0" />{error}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Document Requests Card ────────────────────────────────────────────────────
+
+function DocumentRequestsCard() {
+  const [requests, setRequests] = useState<DocumentRequestResponse[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    kycBuyer.listDocumentRequests()
+      .then(setRequests)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  const pending = requests.filter((r) => r.status === "pending")
+
+  if (loading || pending.length === 0) return null
+
+  return (
+    <div className="bg-white rounded-xl border border-warning/20 shadow-sm overflow-hidden">
+      <div className="px-5 py-4 bg-warning/5 border-b border-warning/20">
+        <div className="flex items-center gap-3">
+          <FileQuestion className="w-5 h-5 text-warning" />
+          <div>
+            <p className="font-semibold text-text-primary">Documents Requested</p>
+            <p className="text-sm text-text-secondary">
+              Our verification team needs the following documents from you.
+            </p>
+          </div>
+        </div>
+      </div>
+      <div className="divide-y divide-border">
+        {pending.map((req) => (
+          <div key={req.id} className="flex items-center gap-3 px-5 py-3">
+            <FileQuestion className="w-4 h-4 text-warning shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-text-primary">{req.document_type_name}</p>
+              {req.reason && <p className="text-xs text-text-secondary">{req.reason}</p>}
+            </div>
+            <Badge className={cn(
+              "text-xs border capitalize",
+              req.priority === "required"
+                ? "bg-danger/10 text-danger border-danger/20"
+                : "bg-gray-100 text-text-secondary border-gray-200"
+            )}>
+              {req.priority}
+            </Badge>
+          </div>
+        ))}
+      </div>
+      <div className="px-5 py-3 bg-gray-50 border-t border-border">
+        <Link href="/kyc/submit">
+          <Button size="sm" className="bg-ocean hover:bg-ocean-dark text-white gap-1.5">
+            <ArrowRight className="w-3.5 h-3.5" /> Upload Requested Documents
+          </Button>
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function KYCPage() {
   const { user } = useAuth()
@@ -313,6 +519,12 @@ export default function KYCPage() {
           </Table>
         </div>
       )}
+
+      {/* Phone Verification */}
+      <PhoneVerificationCard />
+
+      {/* Document Requests from Agent */}
+      <DocumentRequestsCard />
 
       {/* What happens next */}
       <div>

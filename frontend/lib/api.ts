@@ -18,6 +18,7 @@ export interface UserProfile {
   avatar_url: string | null
   roles: string[]
   kyc_status: string
+  phone_verified?: boolean
   is_active: boolean
   created_at: string
 }
@@ -2549,6 +2550,53 @@ export interface KycAgentReviewRequest {
 
 // ── KYC Agent module ──────────────────────────────────────────────────────────
 
+// ── Enhanced KYC types ────────────────────────────────────────────────────────
+
+export interface DocumentRequestResponse {
+  id: string; submission_id: string; document_type_id: string
+  document_type_name: string; document_type_slug?: string
+  requested_by: string; requested_by_name?: string
+  reason: string | null; priority: "required" | "recommended"
+  status: "pending" | "uploaded" | "waived"
+  fulfilled_doc_id: string | null
+  created_at: string; updated_at: string
+}
+
+export interface DocumentVerificationResponse {
+  id: string; document_id: string; verified_by: string
+  verified_by_name: string | null
+  original_name: string | null; document_type_name: string
+  status: "verified" | "rejected" | "needs_clarification"
+  rejection_reason: string | null
+  checklist_results: ChecklistItem[]
+  extracted_data: Record<string, string>
+  notes: string | null; created_at: string
+}
+
+export interface ChecklistItem {
+  key: string; label: string; passed: boolean
+  value?: string; notes?: string
+}
+
+export interface ChecklistTemplateItem {
+  key: string; label: string; type: "boolean" | "date" | "text"
+  required?: boolean
+}
+
+export interface VerificationCallResponse {
+  call_id: string; twilio_call_sid: string | null
+  status: string; created_at: string
+}
+
+export interface DocumentAccessLogEntry {
+  id: string; document_id: string; accessed_by: string
+  accessed_by_name: string | null; accessor_role: string
+  access_type: string; ip_address: string | null
+  accessed_at: string
+}
+
+// ── KYC Agent API ─────────────────────────────────────────────────────────────
+
 export const kycAgent = {
   getQueue: (params?: { page?: number; page_size?: number }) => {
     const qs = new URLSearchParams()
@@ -2570,6 +2618,81 @@ export const kycAgent = {
   submitReview: (id: string, data: KycAgentReviewRequest) =>
     request<KycReviewResponse>(`/kyc/agent/submissions/${id}/review`, {
       method: "POST", body: JSON.stringify(data),
+    }),
+
+  // Document verification
+  viewDocument: (docId: string) =>
+    request<KycDocumentResponse>(`/kyc/agent/documents/${docId}/view`),
+
+  getChecklistTemplate: (docId: string) =>
+    request<{ document_id: string; checklist_template: ChecklistTemplateItem[] | null }>(
+      `/kyc/agent/documents/${docId}/checklist-template`
+    ),
+
+  verifyDocument: (docId: string, data: {
+    status: "verified" | "rejected" | "needs_clarification"
+    checklist_results?: Record<string, unknown>
+    extracted_data?: Record<string, string>
+    rejection_reason?: string
+    notes?: string
+  }) =>
+    request<DocumentVerificationResponse>(`/kyc/agent/documents/${docId}/verify`, {
+      method: "POST", body: JSON.stringify(data),
+    }),
+
+  getVerifications: (submissionId: string) =>
+    request<DocumentVerificationResponse[]>(`/kyc/agent/submissions/${submissionId}/verifications`),
+
+  getAccessLog: (docId: string) =>
+    request<DocumentAccessLogEntry[]>(`/kyc/agent/documents/${docId}/access-log`),
+
+  // Document requests
+  requestDocuments: (submissionId: string, requests: Array<{
+    document_type_id: string; reason?: string; priority?: "required" | "recommended"
+  }>) =>
+    request<DocumentRequestResponse[]>(`/kyc/agent/submissions/${submissionId}/document-requests`, {
+      method: "POST", body: JSON.stringify({ requests }),
+    }),
+
+  listDocumentRequests: (submissionId: string) =>
+    request<DocumentRequestResponse[]>(`/kyc/agent/submissions/${submissionId}/document-requests`),
+
+  waiveDocumentRequest: (requestId: string, reason: string) =>
+    request<DocumentRequestResponse>(`/kyc/agent/document-requests/${requestId}/waive`, {
+      method: "POST", body: JSON.stringify({ reason }),
+    }),
+
+  // Verification calls
+  initiateCall: (submissionId: string, data: { buyer_phone: string; agent_phone: string }) =>
+    request<VerificationCallResponse>(`/kyc/agent/submissions/${submissionId}/call`, {
+      method: "POST", body: JSON.stringify(data),
+    }),
+
+  saveCallNotes: (callId: string, data: { call_outcome: string; call_notes?: string }) =>
+    request<{ message: string }>(`/kyc/agent/calls/${callId}/notes`, {
+      method: "POST", body: JSON.stringify(data),
+    }),
+}
+
+// ── KYC Buyer Enhanced API ──────────────────────────────────────────────────
+
+export const kycBuyer = {
+  sendPhoneOtp: (phone: string) =>
+    request<{ message: string; phone: string }>("/kyc/me/phone/send-otp", {
+      method: "POST", body: JSON.stringify({ phone }),
+    }),
+
+  verifyPhoneOtp: (phone: string, code: string) =>
+    request<{ message: string; phone: string; phone_verified: boolean }>("/kyc/me/phone/verify-otp", {
+      method: "POST", body: JSON.stringify({ phone, code }),
+    }),
+
+  listDocumentRequests: () =>
+    request<DocumentRequestResponse[]>("/kyc/me/document-requests"),
+
+  fulfillDocumentRequest: (requestId: string, documentId: string) =>
+    request<DocumentRequestResponse>(`/kyc/me/document-requests/${requestId}/fulfill`, {
+      method: "POST", body: JSON.stringify({ document_id: documentId }),
     }),
 }
 
