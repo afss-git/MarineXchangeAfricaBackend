@@ -162,34 +162,39 @@ class VerifyOtpRequest(BaseModel):
 @router.post(
     "/me/phone/send-otp",
     summary="Send phone verification OTP",
-    description="Sends an SMS OTP to the given phone number via Twilio Verify.",
+    description="Generates an OTP, stores in DB, and sends via SMS. In non-production, the code is returned in the response for testing.",
 )
 async def send_otp(
     payload: SendOtpRequest,
     db: DbConn,
     current_user: CurrentUser,
 ):
-    sent = await send_phone_otp(payload.phone)
-    if not sent:
+    result = await send_phone_otp(db, payload.phone)
+    if not result["sent"]:
         from fastapi import HTTPException
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Failed to send OTP. Please try again.",
         )
-    return {"message": "OTP sent successfully.", "phone": payload.phone}
+    response = {"message": "OTP sent successfully.", "phone": payload.phone}
+    # In dev/staging, include the code so the flow is testable without paid Twilio
+    if "code" in result:
+        response["code"] = result["code"]
+        response["note"] = result.get("note", "")
+    return response
 
 
 @router.post(
     "/me/phone/verify-otp",
     summary="Verify phone OTP",
-    description="Verifies the OTP code. On success, marks the user's phone as verified.",
+    description="Verifies the OTP code against DB. On success, marks the user's phone as verified.",
 )
 async def verify_otp(
     payload: VerifyOtpRequest,
     db: DbConn,
     current_user: CurrentUser,
 ):
-    valid = await verify_phone_otp(payload.phone, payload.code)
+    valid = await verify_phone_otp(db, payload.phone, payload.code)
     if not valid:
         from fastapi import HTTPException
         raise HTTPException(

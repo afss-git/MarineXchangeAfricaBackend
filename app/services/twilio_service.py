@@ -1,17 +1,22 @@
 """
-Twilio integration service.
+Phone verification & voice call service.
 
-Handles:
-- SMS OTP verification (buyer phone verification at signup)
-- Agent-to-buyer voice calls (routed through platform Twilio number)
-- Call status webhook processing
+OTP flow:
+1. Generate a 6-digit code, store in DB with 10-minute expiry
+2. Attempt to deliver via Twilio SMS
+3. If Twilio fails (trial account, misconfigured, etc.) the code is still
+   stored — in non-production environments it's returned in the API response
+   so the flow is fully testable without a paid Twilio account.
 
-All calls are routed through the platform number so buyer never sees
-agent's personal phone. Calls are recorded with consent announcement.
+Voice calls:
+- Agent-to-buyer verification calls routed through the platform Twilio number
+- Buyer never sees agent's personal phone
 """
 from __future__ import annotations
 
 import logging
+import secrets
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 import asyncpg
@@ -20,6 +25,9 @@ from fastapi import HTTPException, status
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+OTP_LENGTH = 6
+OTP_TTL_MINUTES = 10
 
 
 # ── Lazy Twilio client ────────────────────────────────────────────────────────
@@ -41,72 +49,100 @@ def _get_client():
     return _twilio_client
 
 
+def _generate_otp() -> str:
+    """Generate a cryptographically random 6-digit OTP."""
+    return "".join(str(secrets.randbelow(10)) for _ in range(OTP_LENGTH))
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
-# SMS OTP — Phone Verification
+# SMS OTP — Phone Verification (DB-backed)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-async def send_phone_otp(phone: str) -> bool:
+async def send_phone_otp(db: asyncpg.Connection, phone: str) -> dict:
     """
-    Send an SMS OTP to the given phone number via Twilio Verify.
-
-    Args:
-        phone: E.164 format phone number (e.g. +2348012345678)
+    Generate an OTP, store it in DB, and attempt to send via Twilio SMS.
 
     Returns:
-        True if OTP was sent successfully, False otherwise.
+        dict with "sent" (bool) and optionally "code" (in non-prod when SMS fails).
     """
-    if not settings.TWILIO_VERIFY_SERVICE_SID:
-        logger.warning("TWILIO_VERIFY_SERVICE_SID not set — cannot send OTP")
-        return False
+    code = _generate_otp()
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=OTP_TTL_MINUTES)
 
+    # Invalidate any previous OTPs for this phone
+    await db.execute(
+        "UPDATE public.phone_otps SET used = TRUE WHERE phone = $1 AND used = FALSE",
+        phone,
+    )
+
+    # Store new OTP
+    await db.execute(
+        """
+        INSERT INTO public.phone_otps (phone, code, expires_at)
+        VALUES ($1, $2, $3)
+        """,
+        phone, code, expires_at,
+    )
+
+    # Try to send via Twilio SMS
+    sms_sent = False
     try:
-        client = _get_client()
-        verification = client.verify.v2.services(
-            settings.TWILIO_VERIFY_SERVICE_SID
-        ).verifications.create(
-            to=phone,
-            channel="sms",
-        )
-        logger.info("OTP sent to %s — status=%s sid=%s", phone, verification.status, verification.sid)
-        return verification.status == "pending"
+        if settings.TWILIO_PHONE_NUMBER:
+            client = _get_client()
+            message = client.messages.create(
+                to=phone,
+                from_=settings.TWILIO_PHONE_NUMBER,
+                body=f"Your MarineXchange verification code is: {code}. It expires in {OTP_TTL_MINUTES} minutes.",
+            )
+            logger.info("OTP SMS sent to %s — sid=%s", phone, message.sid)
+            sms_sent = True
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error("Failed to send OTP to %s: %s", phone, exc)
-        return False
+        logger.warning("SMS delivery failed for %s: %s", phone, exc)
+
+    result: dict = {"sent": True, "sms_delivered": sms_sent}
+
+    # In non-production, return the code so the flow is testable
+    if not settings.is_production:
+        result["code"] = code
+        result["note"] = "Code included in response because ENVIRONMENT != production"
+
+    if not sms_sent and settings.is_production:
+        logger.error("OTP SMS failed in production for %s", phone)
+        return {"sent": False, "sms_delivered": False}
+
+    return result
 
 
-async def verify_phone_otp(phone: str, code: str) -> bool:
+async def verify_phone_otp(db: asyncpg.Connection, phone: str, code: str) -> bool:
     """
-    Verify an SMS OTP code.
+    Verify an OTP code against the DB.
 
-    Args:
-        phone: E.164 format phone number
-        code: The 6-digit OTP code entered by the user
-
-    Returns:
-        True if code is valid, False otherwise.
+    Returns True if the code is valid and not expired.
     """
-    if not settings.TWILIO_VERIFY_SERVICE_SID:
-        logger.warning("TWILIO_VERIFY_SERVICE_SID not set — cannot verify OTP")
+    row = await db.fetchrow(
+        """
+        SELECT id FROM public.phone_otps
+        WHERE phone = $1
+          AND code = $2
+          AND used = FALSE
+          AND expires_at > NOW()
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        phone, code,
+    )
+
+    if not row:
         return False
 
-    try:
-        client = _get_client()
-        check = client.verify.v2.services(
-            settings.TWILIO_VERIFY_SERVICE_SID
-        ).verification_checks.create(
-            to=phone,
-            code=code,
-        )
-        logger.info("OTP check for %s — status=%s", phone, check.status)
-        return check.status == "approved"
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error("OTP verification failed for %s: %s", phone, exc)
-        return False
+    # Mark as used
+    await db.execute(
+        "UPDATE public.phone_otps SET used = TRUE WHERE id = $1",
+        row["id"],
+    )
+    return True
 
 
 async def mark_phone_verified(db: asyncpg.Connection, user_id: UUID) -> None:
@@ -140,9 +176,6 @@ async def initiate_verification_call(
     3. Buyer sees the platform's Twilio number (not agent's personal)
     4. Consent announcement plays before recording starts
     5. Call events are sent to our webhook
-
-    Returns:
-        Dict with call_id (our DB id) and twilio_call_sid.
     """
     from twilio.base.exceptions import TwilioRestException
 
@@ -152,7 +185,6 @@ async def initiate_verification_call(
             detail="Voice calling is not configured.",
         )
 
-    # Create call record in DB first
     call_record = await db.fetchrow(
         """
         INSERT INTO kyc.verification_calls
@@ -160,17 +192,11 @@ async def initiate_verification_call(
         VALUES ($1, $2, $3, $4, $5, 'initiated')
         RETURNING id
         """,
-        submission_id,
-        agent_id,
-        buyer_id,
-        settings.TWILIO_PHONE_NUMBER,
-        buyer_phone,
+        submission_id, agent_id, buyer_id,
+        settings.TWILIO_PHONE_NUMBER, buyer_phone,
     )
     call_id = call_record["id"]
 
-    # Build TwiML for the call flow:
-    # 1. Play consent announcement
-    # 2. Bridge to buyer
     webhook_base = settings.TWILIO_WEBHOOK_URL.rstrip("/")
     twiml_url = f"{webhook_base}/voice-connect?call_id={call_id}&buyer_phone={buyer_phone}"
     status_url = f"{webhook_base}/voice-status?call_id={call_id}"
@@ -184,14 +210,12 @@ async def initiate_verification_call(
             status_callback=status_url,
             status_callback_event=["initiated", "ringing", "answered", "completed"],
             status_callback_method="POST",
-            record=False,  # We handle recording in TwiML for consent
+            record=False,
         )
 
-        # Update DB with Twilio SID
         await db.execute(
             "UPDATE kyc.verification_calls SET twilio_call_sid = $1 WHERE id = $2",
-            call.sid,
-            call_id,
+            call.sid, call_id,
         )
 
         logger.info(
@@ -202,7 +226,6 @@ async def initiate_verification_call(
         return {"call_id": str(call_id), "twilio_call_sid": call.sid, "status": "initiated"}
 
     except TwilioRestException as exc:
-        # Mark call as failed
         await db.execute(
             "UPDATE kyc.verification_calls SET status = 'failed' WHERE id = $1",
             call_id,
@@ -222,10 +245,7 @@ async def process_call_status_webhook(
     recording_url: str | None = None,
     recording_duration: int | None = None,
 ) -> None:
-    """
-    Process Twilio voice status callback.
-    Maps Twilio statuses to our schema statuses.
-    """
+    """Process Twilio voice status callback."""
     STATUS_MAP = {
         "queued": "initiated",
         "initiated": "initiated",
@@ -260,9 +280,9 @@ async def process_call_status_webhook(
         idx += 1
 
     if our_status == "in_progress":
-        update_parts.append(f"started_at = NOW()")
+        update_parts.append("started_at = NOW()")
     elif our_status in ("completed", "no_answer", "busy", "failed", "cancelled"):
-        update_parts.append(f"ended_at = NOW()")
+        update_parts.append("ended_at = NOW()")
 
     query = f"UPDATE kyc.verification_calls SET {', '.join(update_parts)} WHERE id = $1"
     await db.execute(query, *params)
@@ -284,10 +304,7 @@ async def save_call_notes(
         SET call_outcome = $1, call_notes = $2
         WHERE id = $3 AND agent_id = $4
         """,
-        call_outcome,
-        call_notes,
-        call_id,
-        agent_id,
+        call_outcome, call_notes, call_id, agent_id,
     )
     if result == "UPDATE 0":
         raise HTTPException(
