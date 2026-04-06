@@ -6,6 +6,7 @@ import {
   Lock,
   Bell,
   ShieldCheck,
+  Phone,
   Camera,
   Save,
   Eye,
@@ -50,6 +51,7 @@ export default function ProfilePage() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [roles, setRoles] = useState<string[]>([])
   const [kycStatus, setKycStatus] = useState("")
+  const [phoneVerified, setPhoneVerified] = useState(false)
   const [memberSince, setMemberSince] = useState("")
 
   // Profile fields
@@ -102,6 +104,7 @@ export default function ProfilePage() {
       setAvatarUrl(user.avatar_url)
       setRoles(user.roles ?? [])
       setKycStatus(user.kyc_status)
+      setPhoneVerified(user.phone_verified ?? false)
       setMemberSince(new Date(user.created_at).toLocaleDateString("en-GB", { month: "long", year: "numeric" }))
     }).catch(() => {/* silent — user may not be loaded yet */})
   }, [])
@@ -222,6 +225,15 @@ export default function ProfilePage() {
                   {role.replace(/_/g, " ")}
                 </Badge>
               ))}
+              {phoneVerified ? (
+                <Badge className="bg-success/10 text-success border border-success/20 text-xs flex items-center gap-1">
+                  <Phone className="w-3 h-3" /> Phone Verified
+                </Badge>
+              ) : (
+                <Badge className="bg-amber-50 text-amber-600 border border-amber-200 text-xs flex items-center gap-1">
+                  <Phone className="w-3 h-3" /> Phone Unverified
+                </Badge>
+              )}
               {kycStatus === "approved" && (
                 <Badge className="bg-success/10 text-success border border-success/20 text-xs flex items-center gap-1">
                   <ShieldCheck className="w-3 h-3" /> KYC Verified

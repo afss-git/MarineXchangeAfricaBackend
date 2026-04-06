@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { Search, RefreshCw, Users, AlertCircle, Loader2, ShieldCheck, ChevronRight } from "lucide-react"
+import { Search, RefreshCw, Users, AlertCircle, Loader2, ShieldCheck, ChevronRight, Phone } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -125,6 +125,15 @@ export default function AdminBuyersPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm font-semibold text-text-primary">{buyer.full_name || "—"}</p>
+                      {(buyer as any).phone_verified ? (
+                        <Badge className="text-[10px] bg-success/10 text-success border border-success/20 gap-1">
+                          <Phone className="w-3 h-3" /> Verified
+                        </Badge>
+                      ) : (
+                        <Badge className="text-[10px] bg-amber-50 text-amber-600 border border-amber-200 gap-1">
+                          <Phone className="w-3 h-3" /> Unverified
+                        </Badge>
+                      )}
                       {!buyer.is_active && (
                         <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full border border-gray-200">Inactive</span>
                       )}

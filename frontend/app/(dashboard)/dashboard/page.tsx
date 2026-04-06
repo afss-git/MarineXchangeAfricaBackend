@@ -1,6 +1,5 @@
 "use client"
 
-import { useState } from "react"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth"
 import { PageTour } from "@/components/tour/tour-engine"
@@ -10,13 +9,10 @@ import {
   Handshake,
   ShieldCheck,
   ArrowRight,
-  CheckCircle2,
   Clock,
-  XCircle,
   Package,
   Gavel,
   Store,
-  AlertCircle,
   Check,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -54,17 +50,13 @@ const dealStatusStyle: Record<string, string> = {
   disputed:         "bg-danger/10 text-danger border-danger/20",
 }
 
-const kycStepLabels = ["Email Verified", "KYC Submitted", "Under Review", "KYC Approved", "Trading Enabled"]
+const kycStepLabels = ["Phone Verified", "Documents Uploaded", "Agent Review", "Verified"]
 
-function kycStepIndex(status: string | null): number {
-  switch (status) {
-    case "not_submitted": return 1
-    case "submitted":     return 2
-    case "under_review":  return 2
-    case "approved":      return 4
-    case "rejected":      return 1
-    default:              return 0
-  }
+function kycStepIndex(status: string | null, phoneVerified?: boolean): number {
+  if (status === "approved") return 4
+  if (status === "under_review" || status === "submitted") return 3
+  if (phoneVerified) return 1
+  return 0
 }
 
 function StatSkeleton() {
@@ -108,9 +100,9 @@ export default function DashboardPage() {
 
   const openDeals = deals.filter((d) => d.status !== "completed" && d.status !== "cancelled")
   const pendingPRs = prs.filter((p) => p.status === "pending" || p.status === "negotiating")
-  const kycStatusLabel = kyc ? (kyc.kyc_status === "approved" ? "Verified" : kyc.kyc_status === "not_submitted" ? "Not Submitted" : kyc.current_submission_status?.replace(/_/g, " ") ?? kyc.kyc_status) : "—"
+  const kycStatusLabel = kyc ? (kyc.kyc_status === "approved" ? "Verified" : kyc.kyc_status === "not_submitted" ? (kyc.phone_verified ? "Phone Verified" : "Not Started") : kyc.current_submission_status?.replace(/_/g, " ") ?? kyc.kyc_status) : "—"
   const kycApproved = kyc?.kyc_status === "approved"
-  const kycStep = kycStepIndex(kyc?.kyc_status ?? null)
+  const kycStep = kycStepIndex(kyc?.kyc_status ?? null, kyc?.phone_verified)
 
   const stats = [
     {
@@ -362,8 +354,10 @@ export default function DashboardPage() {
           <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex-1">
               <h3 className="text-lg font-semibold">
-                {kyc.kyc_status === "not_submitted"
-                  ? "Complete KYC to unlock full trading"
+                {kyc.kyc_status === "not_submitted" && !kyc.phone_verified
+                  ? "Verify your phone to start KYC"
+                  : kyc.kyc_status === "not_submitted" && kyc.phone_verified
+                  ? "Phone verified — waiting for document requests"
                   : kyc.current_submission_status === "under_review"
                   ? "Your KYC is being reviewed"
                   : kyc.current_submission_status === "rejected"
@@ -371,8 +365,10 @@ export default function DashboardPage() {
                   : "Complete KYC to unlock full trading"}
               </h3>
               <p className="mt-1 text-sm text-white/70">
-                {kyc.kyc_status === "not_submitted"
-                  ? "Verify your identity to access all marketplace features and start transacting securely."
+                {kyc.kyc_status === "not_submitted" && !kyc.phone_verified
+                  ? "Start by verifying your phone number. A verification agent will then request specific documents from you."
+                  : kyc.kyc_status === "not_submitted" && kyc.phone_verified
+                  ? "A verification agent will be assigned to review your profile and request the documents needed."
                   : kyc.current_submission_status === "under_review"
                   ? "Our verification team is reviewing your documents. This typically takes 1–2 business days."
                   : kyc.rejection_reason
@@ -417,7 +413,11 @@ export default function DashboardPage() {
             {kyc.kyc_status !== "submitted" && kyc.current_submission_status !== "under_review" && (
               <Link href="/kyc">
                 <Button size="lg" className="bg-ocean hover:bg-ocean-dark text-white shrink-0">
-                  {kyc.kyc_status === "not_submitted" ? "Start KYC" : "Resubmit KYC"}
+                  {kyc.kyc_status === "not_submitted" && !kyc.phone_verified
+                    ? "Verify Phone"
+                    : kyc.kyc_status === "not_submitted"
+                    ? "View KYC Status"
+                    : "Resubmit KYC"}
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               </Link>

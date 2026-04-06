@@ -156,6 +156,8 @@ class KycSubmissionListItem(BaseModel):
     assigned_agent: str | None      # agent full_name (if assigned)
     document_count: int
     created_at:     datetime
+    buyer_phone_verified: bool = False
+    buyer_phone:    str | None = None
 
     model_config = {"from_attributes": True}
 

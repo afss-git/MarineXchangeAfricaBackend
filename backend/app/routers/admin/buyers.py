@@ -50,7 +50,7 @@ async def list_buyers(
     rows = await db.fetch(
         f"""
         SELECT
-            p.id, p.full_name, p.company_name, p.phone, p.country,
+            p.id, p.full_name, p.company_name, p.phone, p.phone_verified, p.country,
             p.roles, p.kyc_status, p.is_active, p.created_at,
             u.email,
             (SELECT COUNT(*) FROM finance.deals WHERE buyer_id = p.id) AS total_deals,
@@ -74,7 +74,7 @@ async def get_buyer(buyer_id: UUID, db: DbConn, current_user: AdminUser) -> dict
     profile = await db.fetchrow(
         """
         SELECT p.id, p.full_name, p.company_name, p.company_reg_no,
-               p.phone, p.country, p.roles, p.kyc_status, p.kyc_expires_at,
+               p.phone, p.phone_verified, p.country, p.roles, p.kyc_status, p.kyc_expires_at,
                p.kyc_attempt_count, p.is_active, p.created_at, p.updated_at,
                u.email
         FROM public.profiles p

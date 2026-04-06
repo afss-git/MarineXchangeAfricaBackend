@@ -2125,6 +2125,7 @@ export interface KycSubmissionListItem {
   buyer_company: string | null; cycle_number: number; status: string
   submitted_at: string | null; risk_score: string | null
   assigned_agent: string | null; document_count: number; created_at: string
+  buyer_phone_verified?: boolean; buyer_phone?: string | null
 }
 
 export interface KycSubmissionResponse {
@@ -2926,7 +2927,7 @@ export const adminSellers = {
 export interface AdminBuyerDetail {
   profile: {
     id: string; full_name: string | null; email: string; company_name: string | null
-    company_reg_no: string | null; phone: string | null; country: string | null
+    company_reg_no: string | null; phone: string | null; phone_verified?: boolean; country: string | null
     roles: string[]; kyc_status: string; kyc_expires_at: string | null
     kyc_attempt_count: number; is_active: boolean; created_at: string; updated_at: string
   }

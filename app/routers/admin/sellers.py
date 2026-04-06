@@ -50,7 +50,7 @@ async def list_sellers(
     rows = await db.fetch(
         f"""
         SELECT
-            p.id, p.full_name, p.company_name, p.phone, p.country,
+            p.id, p.full_name, p.company_name, p.phone, p.phone_verified, p.country,
             p.roles, p.kyc_status, p.is_active, p.created_at,
             u.email,
             (SELECT COUNT(*) FROM marketplace.products WHERE seller_id = p.id AND deleted_at IS NULL) AS total_listings,
@@ -74,7 +74,7 @@ async def get_seller(seller_id: UUID, db: DbConn, current_user: AdminUser) -> di
     profile = await db.fetchrow(
         """
         SELECT p.id, p.full_name, p.company_name, p.company_reg_no,
-               p.phone, p.country, p.roles, p.kyc_status, p.kyc_expires_at,
+               p.phone, p.phone_verified, p.country, p.roles, p.kyc_status, p.kyc_expires_at,
                p.is_active, p.created_at, p.updated_at,
                u.email
         FROM public.profiles p

@@ -26,7 +26,7 @@ import {
 
 interface SellerProfile {
   id: string; full_name: string | null; email: string; company_name: string | null
-  company_reg_no: string | null; phone: string | null; country: string | null
+  company_reg_no: string | null; phone: string | null; phone_verified?: boolean; country: string | null
   roles: string[]; kyc_status: string; kyc_expires_at: string | null
   is_active: boolean; created_at: string; updated_at: string
 }
@@ -173,7 +173,7 @@ function OverviewTab({ data }: { data: SellerDetail }) {
           </div>
           <div className="p-6 space-y-4">
             {[
-              { icon: Phone,      label: "Phone",          value: profile.phone || "—" },
+              { icon: Phone,      label: "Phone",          value: profile.phone ? `${profile.phone}${profile.phone_verified ? " ✓ Verified" : ""}` : "—" },
               { icon: MapPin,     label: "Country",        value: profile.country || "—" },
               { icon: Calendar,   label: "Joined",         value: fmtDate(profile.created_at) },
               { icon: ShieldCheck,label: "KYC Expires",    value: fmtDate(profile.kyc_expires_at) },
@@ -749,7 +749,7 @@ function ListingDetailPanel({ listing, onActionDone }: { listing: Listing; onAct
   async function handleToggleVisibility() {
     setToggling(true)
     try {
-      await marketplaceAdmin.toggleVisibility(product.id, !product.is_visible)
+      await marketplaceAdmin.toggleVisibility(product!.id, !product!.is_visible)
       await load()
     } catch { /* ignore */ } finally { setToggling(false) }
   }

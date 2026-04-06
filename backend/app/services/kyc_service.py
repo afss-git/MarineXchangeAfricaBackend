@@ -815,6 +815,8 @@ async def list_agent_assignments(
             s.submitted_at,
             p.full_name  AS buyer_name,
             p.company_name AS buyer_company,
+            p.phone_verified AS buyer_phone_verified,
+            p.phone AS buyer_phone,
             ab.full_name AS assigned_by_name,
             (SELECT COUNT(*) FROM kyc.documents d
              WHERE d.submission_id = a.submission_id AND d.deleted_at IS NULL) AS document_count,
@@ -1151,6 +1153,8 @@ async def list_kyc_submissions(
             s.id, s.buyer_id, s.cycle_number, s.status, s.submitted_at, s.created_at,
             p.full_name  AS buyer_name,
             p.company_name AS buyer_company,
+            p.phone_verified AS buyer_phone_verified,
+            p.phone AS buyer_phone,
             ag.full_name AS assigned_agent,
             (SELECT COUNT(*) FROM kyc.documents d
              WHERE d.submission_id = s.id AND d.deleted_at IS NULL) AS document_count,

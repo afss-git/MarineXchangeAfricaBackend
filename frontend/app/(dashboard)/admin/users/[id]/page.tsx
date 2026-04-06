@@ -549,7 +549,7 @@ export default function AdminUserDetailPage() {
                 <div>
                   {[
                     ["Email", user.email],
-                    ["Phone", user.phone ?? "—"],
+                    ["Phone", user.phone ? `${user.phone}${(user as any).phone_verified ? " ✓ Verified" : ""}` : "—"],
                     ["Country", user.country ?? "—"],
                     ["Company", user.company_name ?? "—"],
                     ["Reg No.", user.company_reg_no ?? "—"],

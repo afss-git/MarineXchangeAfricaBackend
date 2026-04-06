@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import {
   Search, ShieldCheck, ShieldX, FileText, Eye, ChevronDown, ChevronUp,
   CheckCircle2, XCircle, Clock, AlertCircle, Plus, Settings2, RefreshCw,
-  User, Loader2, ExternalLink, Tag, ToggleLeft, ToggleRight,
+  User, Loader2, ExternalLink, Tag, ToggleLeft, ToggleRight, Phone,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -473,12 +473,23 @@ function SubmissionsTab() {
                       <p className="text-sm font-semibold text-text-primary">
                         {sub.buyer_name ?? "Unknown User"}
                       </p>
+                      {sub.buyer_phone_verified ? (
+                        <Badge className="text-[10px] bg-success/10 text-success border border-success/20 gap-1">
+                          <Phone className="w-3 h-3" /> Verified
+                        </Badge>
+                      ) : (
+                        <Badge className="text-[10px] bg-amber-50 text-amber-600 border border-amber-200 gap-1">
+                          <Phone className="w-3 h-3" /> Unverified
+                        </Badge>
+                      )}
                       {sub.cycle_number > 1 && (
                         <Badge variant="secondary" className="text-xs">Cycle {sub.cycle_number}</Badge>
                       )}
                     </div>
                     <p className="text-xs text-text-secondary truncate">
-                      {sub.buyer_company ?? "—"} · Submitted {fmtDate(sub.submitted_at)}
+                      {sub.buyer_company ?? "—"}
+                      {sub.buyer_phone && <> · <Phone className="w-3 h-3 inline" /> {sub.buyer_phone}</>}
+                      {" "}· Submitted {fmtDate(sub.submitted_at)}
                       {sub.assigned_agent && ` · Agent: ${sub.assigned_agent}`}
                     </p>
                   </div>

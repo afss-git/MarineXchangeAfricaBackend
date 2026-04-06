@@ -12,6 +12,7 @@ import {
   FileCheck,
   BadgeCheck,
   ChevronRight,
+  Phone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -64,9 +65,9 @@ const STEPS: Step[] = [
     Icon:         ShieldCheck,
     title:        () => "Verify Your Identity (KYC)",
     subtitle:     "Required to trade on the platform",
-    body:         "Upload your documents — passport, business registration, proof of address. Our compliance team reviews within 1–2 business days. KYC unlocks purchase requests, auction bidding, and deal-making.",
+    body:         "Start by verifying your phone number, then a verification agent will request specific documents. Our compliance team reviews within 1–3 business days. KYC unlocks purchase requests, auction bidding, and deal-making.",
     cta:          "Start KYC Now",
-    ctaHref:      "/kyc/submit",
+    ctaHref:      "/kyc",
     skip:         "I'll do this later",
     showKycFlow:  true,
   },
@@ -232,10 +233,10 @@ export function OnboardingModal({ userId, userName }: OnboardingModalProps) {
           {current.showKycFlow && (
             <div className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
               {[
+                { Icon: Phone,     label: "Verify Phone" },
                 { Icon: FileCheck, label: "Upload Docs" },
                 { Icon: User,      label: "Agent Review" },
                 { Icon: BadgeCheck,label: "Approved" },
-                { Icon: Store,     label: "Trade" },
               ].map(({ Icon: StepIcon, label }, i, arr) => (
                 <div key={label} className="flex items-center gap-1.5">
                   <div className="flex flex-col items-center gap-1.5">

@@ -98,7 +98,7 @@ async def list_users(
         f"""
         SELECT
             p.id, p.full_name, p.company_name, p.company_reg_no,
-            p.phone, p.country, p.roles, p.kyc_status, p.avatar_url,
+            p.phone, p.phone_verified, p.country, p.roles, p.kyc_status, p.avatar_url,
             p.is_active, p.created_at, p.updated_at,
             u.email
         FROM public.profiles p
@@ -133,7 +133,7 @@ async def get_user(
         """
         SELECT
             p.id, p.full_name, p.company_name, p.company_reg_no,
-            p.phone, p.country, p.roles, p.kyc_status, p.avatar_url,
+            p.phone, p.phone_verified, p.country, p.roles, p.kyc_status, p.avatar_url,
             p.is_active, p.created_at, p.updated_at,
             u.email,
             (SELECT COUNT(*) FROM finance.deals WHERE buyer_id = p.id) AS deals_as_buyer,

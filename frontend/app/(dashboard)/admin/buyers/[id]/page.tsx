@@ -18,7 +18,7 @@ import { adminBuyers, admin, kycAdmin, type AdminBuyerDetail, type KycSubmission
 
 interface BuyerProfile {
   id: string; full_name: string | null; email: string; company_name: string | null
-  company_reg_no: string | null; phone: string | null; country: string | null
+  company_reg_no: string | null; phone: string | null; phone_verified?: boolean; country: string | null
   roles: string[]; kyc_status: string; kyc_expires_at: string | null
   kyc_attempt_count: number; is_active: boolean; created_at: string; updated_at: string
 }
@@ -413,7 +413,7 @@ function OverviewTab({ data }: { data: BuyerDetail }) {
             {[
               { icon: User,      label: "Full Name",   value: profile.full_name || "—" },
               { icon: Mail,      label: "Email",       value: profile.email },
-              { icon: Phone,     label: "Phone",       value: profile.phone || "—" },
+              { icon: Phone,     label: "Phone",       value: profile.phone ? `${profile.phone}${profile.phone_verified ? " ✓ Verified" : ""}` : "—" },
               { icon: MapPin,    label: "Country",     value: profile.country || "—" },
             ].map(({ icon: Icon, label, value }) => (
               <div key={label} className="flex items-start gap-3">
