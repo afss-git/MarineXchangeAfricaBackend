@@ -1315,49 +1315,68 @@ async def create_document_requests(
     """
     Agent requests specific documents from a buyer.
 
-    Each request dict: {document_type_id, reason, priority}
+    Each request dict: {document_type_id?, custom_document_name?, reason, priority}
+    - Provide document_type_id to pick from the pre-defined list, OR
+    - Provide custom_document_name to write a free-text document name.
     priority: 'required' or 'recommended'
     """
     sub = await _get_submission_or_404(db, submission_id)
 
-    # Verify agent is assigned
+    # Verify agent is assigned — or auto-create assignment if coming from PR context
     asgn = await db.fetchrow(
         "SELECT id FROM kyc.assignments WHERE submission_id = $1 AND agent_id = $2",
         submission_id, agent_id,
     )
     if not asgn:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not assigned to this submission.",
+        # Auto-assign agent to this submission (covers purchase-request-driven flow)
+        await db.execute(
+            """
+            INSERT INTO kyc.assignments (submission_id, agent_id, assigned_by, status)
+            VALUES ($1, $2, $2, 'in_review')
+            ON CONFLICT (submission_id, agent_id) DO NOTHING
+            """,
+            submission_id, agent_id,
         )
 
     created = []
     for req in requests:
-        doc_type_id = uuid.UUID(str(req["document_type_id"]))
-        reason = req.get("reason", "")
-        priority = req.get("priority", "required")
+        raw_type_id = req.get("document_type_id")
+        custom_name = (req.get("custom_document_name") or "").strip()
+        reason      = req.get("reason", "")
+        priority    = req.get("priority", "required")
 
-        # Validate document type exists
-        dt = await db.fetchrow(
-            "SELECT id, name FROM kyc.document_types WHERE id = $1 AND is_active = TRUE",
-            doc_type_id,
-        )
-        if not dt:
+        if not raw_type_id and not custom_name:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Document type {doc_type_id} not found or inactive.",
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Each request must have either document_type_id or custom_document_name.",
             )
+
+        doc_type_id   = uuid.UUID(str(raw_type_id)) if raw_type_id else None
+        doc_type_name = custom_name
+
+        if doc_type_id:
+            # Validate pre-defined type exists
+            dt = await db.fetchrow(
+                "SELECT id, name FROM kyc.document_types WHERE id = $1 AND is_active = TRUE",
+                doc_type_id,
+            )
+            if not dt:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Document type {doc_type_id} not found or inactive.",
+                )
+            doc_type_name = dt["name"]
 
         row = await db.fetchrow(
             """
             INSERT INTO kyc.document_requests
-                (submission_id, document_type_id, requested_by, reason, priority, status)
-            VALUES ($1, $2, $3, $4, $5, 'pending')
+                (submission_id, document_type_id, custom_document_name, requested_by, reason, priority, status)
+            VALUES ($1, $2, $3, $4, $5, $6, 'pending')
             RETURNING *
             """,
-            submission_id, doc_type_id, agent_id, reason, priority,
+            submission_id, doc_type_id, custom_name or None, agent_id, reason, priority,
         )
-        created.append({**dict(row), "document_type_name": dt["name"]})
+        created.append({**dict(row), "document_type_name": doc_type_name})
 
     await write_audit_log(
         db,
@@ -1392,11 +1411,11 @@ async def list_document_requests(
     rows = await db.fetch(
         """
         SELECT dr.*,
-               dt.name AS document_type_name,
+               COALESCE(dt.name, dr.custom_document_name) AS document_type_name,
                dt.slug AS document_type_slug,
                p.full_name AS requested_by_name
         FROM kyc.document_requests dr
-        JOIN kyc.document_types dt ON dt.id = dr.document_type_id
+        LEFT JOIN kyc.document_types dt ON dt.id = dr.document_type_id
         LEFT JOIN public.profiles p ON p.id = dr.requested_by
         WHERE dr.submission_id = $1
         ORDER BY dr.created_at
