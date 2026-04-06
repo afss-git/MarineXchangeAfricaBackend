@@ -93,10 +93,24 @@ class ConvertToDealResponse(BaseModel):
 class AdminPurchaseRequestDetail(BaseModel):
     id:               UUID
     product_id:       UUID
-    product_title:    Optional[str]   = None
+    product_title:    Optional[str]    = None
+    # Enriched product fields
+    product_asking_price:      Optional[Decimal] = None
+    product_currency:          Optional[str]     = None
+    product_condition:         Optional[str]     = None
+    product_availability_type: Optional[str]     = None
+    product_location_country:  Optional[str]     = None
+    product_location_port:     Optional[str]     = None
+    product_primary_image_url: Optional[str]     = None
+    seller_company:            Optional[str]     = None
     buyer_id:         UUID
     buyer_name:       Optional[str]   = None
     buyer_email:      Optional[str]   = None
+    # Enriched buyer fields
+    buyer_phone:         Optional[str] = None
+    buyer_company_name:  Optional[str] = None
+    buyer_kyc_status:    Optional[str] = None
+    buyer_country:       Optional[str] = None
     purchase_type:    str
     quantity:         int
     offered_price:    Optional[Decimal]

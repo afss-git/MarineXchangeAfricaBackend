@@ -131,50 +131,32 @@ function PRPanel({ item, onReported }: {
       {/* Request details */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 px-5 py-4 bg-gray-50/50 text-sm">
         <div>
-          <p className="text-xs text-text-secondary mb-0.5">Request Type</p>
-          <p className="font-medium text-text-primary capitalize">{detail.request_type.replace(/_/g, " ")}</p>
+          <p className="text-xs text-text-secondary mb-0.5">Purchase Type</p>
+          <p className="font-medium text-text-primary capitalize">{detail.purchase_type.replace(/_/g, " ")}</p>
         </div>
         <div>
-          <p className="text-xs text-text-secondary mb-0.5">Budget Range</p>
+          <p className="text-xs text-text-secondary mb-0.5">Offered Price</p>
           <p className="font-medium text-text-primary">
-            {fmtCurrency(detail.budget_min, detail.currency)} – {fmtCurrency(detail.budget_max, detail.currency)}
+            {fmtCurrency(detail.offered_price, detail.offered_currency)}
           </p>
         </div>
-        {detail.preferred_delivery_date && (
-          <div>
-            <p className="text-xs text-text-secondary mb-0.5">Preferred Delivery</p>
-            <p className="font-medium text-text-primary">{fmtDate(detail.preferred_delivery_date)}</p>
-          </div>
-        )}
-        {detail.buyer_email && (
-          <div>
-            <p className="text-xs text-text-secondary mb-0.5">Buyer Email</p>
-            <p className="font-medium text-text-primary">{detail.buyer_email}</p>
-          </div>
-        )}
-        {detail.buyer_phone && (
-          <div>
-            <p className="text-xs text-text-secondary mb-0.5">Buyer Phone</p>
-            <p className="font-medium text-text-primary">{detail.buyer_phone}</p>
-          </div>
-        )}
+        <div>
+          <p className="text-xs text-text-secondary mb-0.5">Quantity</p>
+          <p className="font-medium text-text-primary">{detail.quantity}</p>
+        </div>
         <div>
           <p className="text-xs text-text-secondary mb-0.5">Assignment Status</p>
-          <p className="font-medium text-text-primary capitalize">{detail.assignment_status.replace(/_/g, " ")}</p>
+          <p className="font-medium text-text-primary capitalize">{(detail.assignment_status ?? "pending").replace(/_/g, " ")}</p>
         </div>
       </div>
 
-      {/* Description */}
+      {/* Message */}
+      {detail.message && (
       <div className="px-5 pb-4">
-        <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">Description</p>
-        <p className="text-sm text-text-primary whitespace-pre-line">{detail.description}</p>
-        {detail.additional_requirements && (
-          <div className="mt-3">
-            <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-1">Additional Requirements</p>
-            <p className="text-sm text-text-primary whitespace-pre-line">{detail.additional_requirements}</p>
-          </div>
-        )}
+        <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">Buyer Message</p>
+        <p className="text-sm text-text-primary whitespace-pre-line">{detail.message}</p>
       </div>
+      )}
 
       {/* Existing report */}
       {hasReport && detail.my_report && (
@@ -183,7 +165,7 @@ function PRPanel({ item, onReported }: {
           <div className="p-4 bg-success/5 rounded-lg border border-success/20 space-y-2 text-sm">
             <div className="flex items-center gap-3 flex-wrap">
               <span className="font-medium text-text-primary">
-                Financial Capacity: {fmtCurrency(detail.my_report.financial_capacity_usd)}
+                Financial Capacity: {fmtCurrency(Number(detail.my_report.financial_capacity_usd))}
               </span>
               <Badge className={cn("text-xs border capitalize", {
                 "bg-success/10 text-success border-success/20": detail.my_report.risk_rating === "low",
@@ -200,7 +182,7 @@ function PRPanel({ item, onReported }: {
               </Badge>
             </div>
             <p className="text-text-secondary">{detail.my_report.verification_notes}</p>
-            <p className="text-xs text-text-secondary">Submitted {fmtDate(detail.my_report.submitted_at)}</p>
+            <p className="text-xs text-text-secondary">Submitted {fmtDate(detail.my_report.created_at)}</p>
           </div>
         </div>
       )}
@@ -318,11 +300,12 @@ function PRPanel({ item, onReported }: {
 export default function AgentPurchaseRequestsPage() {
   const [expanded, setExpanded] = useState<string | null>(null)
 
-  const { data: items = [], isLoading: loading, error: swrError, mutate } = useAgentPurchaseRequests()
+  const { data, isLoading: loading, error: swrError, mutate } = useAgentPurchaseRequests()
+  const items = data?.items ?? []
   const error = swrError?.message ?? null
 
-  const pending       = items.filter((i) => ["pending", "assigned"].includes(i.assignment_status)).length
-  const reportDone    = items.filter((i) => i.assignment_status === "report_submitted").length
+  const pending       = items.filter((i) => ["pending", "assigned"].includes(i.assignment_status ?? "")).length
+  const reportDone    = items.filter((i) => i.report_submitted).length
 
   return (
     <div className="space-y-5">
@@ -382,19 +365,20 @@ export default function AgentPurchaseRequestsPage() {
                         {item.product_title ?? "No specific product"}
                       </p>
                       <Badge variant="secondary" className="text-xs capitalize">
-                        {item.request_type.replace(/_/g, " ")}
+                        {item.purchase_type.replace(/_/g, " ")}
                       </Badge>
                     </div>
                     <p className="text-xs text-text-secondary truncate">
-                      {item.buyer_company ?? item.buyer_name ?? "Unknown buyer"}
-                      {" "}· Budget: {fmtCurrency(item.budget_min, item.currency)}–{fmtCurrency(item.budget_max, item.currency)}
-                      {" "}· Assigned {fmtDate(item.assigned_at)}
+                      {item.buyer_name ?? "Unknown buyer"}
+                      {" "}· Price: {fmtCurrency(item.offered_price, item.offered_currency)}
+                      {" "}· Qty: {item.quantity}
+                      {" "}· {fmtDate(item.created_at)}
                     </p>
                   </div>
 
                   <div className="flex items-center gap-3 shrink-0">
                     <StatusBadge status={item.status} />
-                    {item.assignment_status === "report_submitted" && (
+                    {item.report_submitted && (
                       <Badge className="text-xs bg-success/10 text-success border border-success/20">Report Done</Badge>
                     )}
                     {isOpen ? <ChevronUp className="w-4 h-4 text-text-secondary" /> : <ChevronDown className="w-4 h-4 text-text-secondary" />}

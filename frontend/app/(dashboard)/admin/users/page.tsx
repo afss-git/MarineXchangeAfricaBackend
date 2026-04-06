@@ -159,18 +159,22 @@ function CreateStaffModal({ onClose, onCreated }: CreateStaffModalProps) {
           country: form.country.trim(),
         })
       }
-      // Don't call onCreated yet — wait until user clicks Done so mutate()
-      // doesn't re-mount the modal and wipe the inviteLink state
+      // Debug: log full response so we can diagnose modal issue
+      console.log("[CreateStaff] Full API response:", JSON.stringify(res, null, 2))
+      console.log("[CreateStaff] invite_link value:", res.invite_link, "type:", typeof res.invite_link)
+      // Set state before any parent callbacks (mutate() would unmount modal)
       setInviteLink(res.invite_link)
       setEmailSent(res.email_sent)
+      console.log("[CreateStaff] State set — inviteLink:", res.invite_link, "emailSent:", res.email_sent)
     } catch (err) {
+      console.error("[CreateStaff] API error:", err)
       setSubmitError(err instanceof ApiRequestError ? err.message : "Failed to create staff account.")
     } finally {
       setSubmitting(false)
     }
   }
 
-  const copyLink = async () => {
+  const copyInviteLink = async () => {
     if (!inviteLink) return
     await navigator.clipboard.writeText(inviteLink)
     setCopied(true)
@@ -197,7 +201,7 @@ function CreateStaffModal({ onClose, onCreated }: CreateStaffModalProps) {
           </button>
         </div>
 
-        {/* Success — show invite link */}
+        {/* Success panel */}
         {inviteLink && (
           <div className="p-6 space-y-5">
             <div className="flex items-center gap-3 p-3 rounded-lg bg-success/10 border border-success/20">
@@ -209,28 +213,30 @@ function CreateStaffModal({ onClose, onCreated }: CreateStaffModalProps) {
 
             {emailSent ? (
               <p className="text-sm text-text-secondary">
-                An invite email was sent to <strong>{form.email.trim()}</strong>. Share the link below as backup.
+                An invite email with a setup link was sent to <strong>{form.email.trim()}</strong>.
               </p>
             ) : (
               <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/20 text-sm text-warning">
                 <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                <span>Email could not be sent to <strong>{form.email.trim()}</strong>. Share the invite link below manually.</span>
+                <span>Email could not be sent. Share the details below with <strong>{form.email.trim()}</strong> manually.</span>
               </div>
             )}
 
+            {/* Invite link or temp password */}
             <div className="space-y-2">
-              <p className="text-sm font-medium text-text-primary">Temporary Password</p>
-              <p className="text-xs text-text-secondary">Share this with the staff member. They must change it after first login.</p>
+              <p className="text-sm font-medium text-text-primary">
+                {inviteLink.startsWith("http") ? "One-time setup link (expires 24h)" : "Temporary Password"}
+              </p>
+              <p className="text-xs text-text-secondary">
+                {inviteLink.startsWith("http")
+                  ? "Staff can click this link to set their own password before logging in."
+                  : "Auto-generated. Staff must change this after first login."}
+              </p>
               <div className="flex items-center gap-2">
-                <div className="flex-1 px-3 py-2 rounded-lg bg-gray-50 border border-border text-sm font-mono font-bold tracking-widest text-ocean select-all">
+                <div className="flex-1 px-3 py-2 rounded-lg bg-gray-50 border border-border text-sm font-mono break-all text-ocean select-all">
                   {inviteLink}
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={copyLink}
-                  className="shrink-0 gap-1.5"
-                >
+                <Button variant="outline" size="sm" onClick={copyInviteLink} className="shrink-0 gap-1.5">
                   {copied ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
                   {copied ? "Copied!" : "Copy"}
                 </Button>

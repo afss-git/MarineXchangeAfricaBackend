@@ -16,7 +16,10 @@ from uuid import UUID
 
 import asyncpg
 from fastapi import HTTPException, Request, status
-from gotrue.errors import AuthApiError
+try:
+    from gotrue.errors import AuthApiError
+except ImportError:
+    from supabase_auth.errors import AuthApiError
 from supabase import AClient, acreate_client
 
 from app.config import settings
@@ -183,7 +186,7 @@ async def create_internal_user(
         "finance_admin": "Finance Administrator",
     }
     role_label = ROLE_LABELS.get(roles[0], roles[0].replace("_", " ").title())
-    redirect_to = f"{settings.FRONTEND_URL}/auth/set-password"
+    redirect_to = f"{settings.FRONTEND_URL}/set-password"
 
     try:
         import secrets as _secrets
@@ -257,6 +260,12 @@ async def create_internal_user(
             roles,
         )
 
+        logger.info(
+            "CREATE_INTERNAL_USER OK — user=%s invite_link_type=%s invite_link_len=%d starts_http=%s",
+            email, "url" if invite_link.startswith("http") else "temp_pw",
+            len(invite_link), invite_link.startswith("http"),
+        )
+
         # Send invite email via Resend — failure does NOT block account creation
         email_sent = await send_staff_welcome(
             staff_email=email.lower().strip(),
@@ -267,6 +276,11 @@ async def create_internal_user(
             temp_password=temp_pw,
         )
 
+        logger.info(
+            "CREATE_INTERNAL_USER RETURNING — invite_link=%r email_sent=%s",
+            invite_link[:20] + "..." if len(invite_link) > 20 else invite_link,
+            email_sent,
+        )
         return dict(profile), invite_link, email_sent
 
     except HTTPException:

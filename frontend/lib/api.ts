@@ -2681,16 +2681,16 @@ export const prAdmin = {
 // ── Purchase Requests Agent types ─────────────────────────────────────────────
 
 export interface AgentAssignedPRItem {
-  id: string; buyer_name: string | null; buyer_company: string | null
-  product_title: string | null; status: string; request_type: string
-  budget_min: number | null; budget_max: number | null; currency: string
-  assignment_status: string; assigned_at: string
+  id: string; buyer_name: string | null; buyer_id: string
+  product_id: string; product_title: string | null
+  status: string; purchase_type: string
+  quantity: number; offered_price: number | null; offered_currency: string
+  message: string | null
+  assignment_status: string | null; assignment_notes: string | null
+  report_submitted: boolean; created_at: string
 }
 
 export interface AgentAssignedPRDetail extends AgentAssignedPRItem {
-  description: string; additional_requirements: string | null
-  preferred_delivery_date: string | null
-  buyer_email: string | null; buyer_phone: string | null
   my_report: AgentReportInfo | null
 }
 
@@ -2698,7 +2698,7 @@ export interface AgentAssignedPRDetail extends AgentAssignedPRItem {
 
 export const prAgent = {
   listAssigned: () =>
-    request<AgentAssignedPRItem[]>("/purchase-requests/agent/assigned"),
+    request<{ items: AgentAssignedPRItem[]; total: number }>("/purchase-requests/agent/assigned"),
 
   get: (id: string) =>
     request<AgentAssignedPRDetail>(`/purchase-requests/agent/${id}`),

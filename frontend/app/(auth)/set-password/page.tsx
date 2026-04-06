@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
 import { AuthLeftPanel } from "@/components/auth-left-panel"
-import { auth as authApi, ApiRequestError } from "@/lib/api"
+import { profile as profileApi, ApiRequestError } from "@/lib/api"
 
 export default function SetPasswordPage() {
   const router = useRouter()
@@ -50,14 +50,26 @@ export default function SetPasswordPage() {
     setErrors({})
     setIsLoading(true)
     try {
-      await authApi.setPassword({ new_password: password })
+      const token = localStorage.getItem("access_token")
+      console.log("[SetPassword] Token present:", !!token, "length:", token?.length)
+      console.log("[SetPassword] Calling POST /auth/me/set-password...")
+      await profileApi.setPassword({ new_password: password })
+      console.log("[SetPassword] SUCCESS")
       localStorage.removeItem("access_token")
       localStorage.removeItem("refresh_token")
       setDone(true)
-    } catch (err) {
-      setErrors({
-        form: err instanceof ApiRequestError ? err.message : "Failed to set password. Please try again.",
-      })
+    } catch (err: unknown) {
+      console.error("[SetPassword] Full error:", err)
+      console.error("[SetPassword] Error type:", typeof err, err?.constructor?.name)
+      let msg: string
+      if (err instanceof ApiRequestError) {
+        msg = `${err.message} (HTTP ${err.status})`
+      } else if (err instanceof TypeError) {
+        msg = `Network error — could not reach server. Check your connection. (${(err as TypeError).message})`
+      } else {
+        msg = `Unexpected error: ${String(err)}`
+      }
+      setErrors({ form: msg })
     } finally {
       setIsLoading(false)
     }
