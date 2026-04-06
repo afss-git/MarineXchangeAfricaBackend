@@ -172,6 +172,16 @@ class PaginatedKycSubmissionsResponse(BaseModel):
 # BUYER STATUS VIEW
 # ══════════════════════════════════════════════════════════════════════════════
 
+class KycDocumentBrief(BaseModel):
+    """Brief document info for the KYC dashboard."""
+    id:                  UUID
+    document_type_id:    UUID
+    document_type_name:  str
+    document_type_slug:  str
+    original_name:       str | None
+    uploaded_at:         datetime
+
+
 class KycStatusResponse(BaseModel):
     """Buyer's own KYC dashboard view."""
     kyc_status:                 str
@@ -183,6 +193,9 @@ class KycStatusResponse(BaseModel):
     optional_document_types:    list[DocumentTypeResponse]
     uploaded_document_count:    int
     rejection_reason:           str | None
+    phone_verified:             bool = False
+    phone:                      str | None = None
+    documents:                  list[KycDocumentBrief] = []
 
 
 # ══════════════════════════════════════════════════════════════════════════════

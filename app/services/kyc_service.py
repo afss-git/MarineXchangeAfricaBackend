@@ -299,7 +299,7 @@ async def update_document_type(
 async def get_kyc_status(db: asyncpg.Connection, buyer_id: uuid.UUID) -> dict:
     """Returns the buyer's full KYC dashboard view."""
     profile = await db.fetchrow(
-        "SELECT kyc_status, kyc_expires_at, kyc_attempt_count, current_kyc_submission_id FROM public.profiles WHERE id = $1",
+        "SELECT kyc_status, kyc_expires_at, kyc_attempt_count, current_kyc_submission_id, phone_verified, phone FROM public.profiles WHERE id = $1",
         buyer_id,
     )
 
@@ -324,6 +324,22 @@ async def get_kyc_status(db: asyncpg.Connection, buyer_id: uuid.UUID) -> dict:
                 sub_id,
             ) or 0
 
+    # Fetch documents for the current submission
+    documents = []
+    if sub_id:
+        doc_rows = await db.fetch(
+            """
+            SELECT d.id, d.document_type_id, dt.name AS document_type_name, dt.slug AS document_type_slug,
+                   d.original_name, d.uploaded_at
+            FROM kyc.documents d
+            JOIN kyc.document_types dt ON dt.id = d.document_type_id
+            WHERE d.submission_id = $1 AND d.deleted_at IS NULL
+            ORDER BY d.uploaded_at
+            """,
+            sub_id,
+        )
+        documents = [dict(r) for r in doc_rows]
+
     return {
         "kyc_status": profile["kyc_status"],
         "kyc_expires_at": profile["kyc_expires_at"],
@@ -334,6 +350,9 @@ async def get_kyc_status(db: asyncpg.Connection, buyer_id: uuid.UUID) -> dict:
         "optional_document_types": optional,
         "uploaded_document_count": uploaded_count,
         "rejection_reason": rejection_reason,
+        "phone_verified": bool(profile.get("phone_verified", False)),
+        "phone": profile.get("phone"),
+        "documents": documents,
     }
 
 
