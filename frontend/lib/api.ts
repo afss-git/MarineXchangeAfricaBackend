@@ -2841,12 +2841,6 @@ export const prAgent = {
   }),
 }
 
-// ── Auction bid history additions ─────────────────────────────────────────────
-
-export interface PublicBidItem {
-  id: string; auction_id: string; amount: string; currency: string
-  bidder_company: string | null; placed_at: string; is_winning: boolean
-}
 
 export interface MyAuctionBid {
   id: string; auction_id: string; auction_title: string

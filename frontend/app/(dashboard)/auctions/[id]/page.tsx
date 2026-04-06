@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils"
 import {
   auctions as auctionsApi,
   type PublicAuctionDetail,
+  type PublicBidItem,
   type PlaceBidResponse,
   ApiRequestError,
 } from "@/lib/api"
@@ -156,7 +157,7 @@ export default function AuctionDetailPage() {
             currency: res.currency,
             is_winning_bid: res.is_winning_bid,
             bid_time: res.bid_time,
-          },
+          } as PublicBidItem,
           ...prev.recent_bids,
         ].slice(0, 10),
       } : prev)

@@ -52,7 +52,7 @@ export function PageTour({ pageKey, userId, steps, delay = 900 }: PageTourProps)
   const [visible,  setVisible]  = useState(false);  // controls CSS enter animation
   const [stepIdx,  setStepIdx]  = useState(0);
   const [rect,     setRect]     = useState<Rect | null>(null);
-  const retryRef = useRef<ReturnType<typeof setTimeout>>();
+  const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Start tour once on mount ───────────────────────────────────────────────
   useEffect(() => {
