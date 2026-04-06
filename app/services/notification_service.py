@@ -552,6 +552,31 @@ async def send_kyc_expiry_warning(
     )
 
 
+async def send_document_request(
+    buyer_email: str,
+    buyer_name: str,
+    document_names: list[str],
+) -> None:
+    """Notify buyer that agent has requested additional documents."""
+    doc_list = "".join(f"<li>{n}</li>" for n in document_names)
+
+    await _send(
+        to=buyer_email,
+        subject="Documents Requested — MarineXchange Africa KYC",
+        html=f"""
+        <p>Dear {buyer_name},</p>
+        <p>Our verification team has requested the following documents
+        to complete your KYC review:</p>
+        <ul>{doc_list}</ul>
+        <p>Please log in to your MarineXchange Africa account and upload the
+        requested documents at your earliest convenience.</p>
+        <br/>
+        <p>Best regards,<br/><strong>MarineXchange Africa Verification Team</strong></p>
+        """,
+        tags=[{"name": "category", "value": "kyc_document_request"}],
+    )
+
+
 # ── Staff Invite ──────────────────────────────────────────────────────────────
 
 async def send_staff_welcome(

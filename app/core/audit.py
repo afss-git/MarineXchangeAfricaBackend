@@ -58,6 +58,12 @@ class AuditAction(StrEnum):
     KYC_ADMIN_OVERRIDE          = "kyc.admin_override"
     KYC_DOCUMENT_TYPE_CREATED   = "kyc.document_type_created"
     KYC_DOCUMENT_TYPE_UPDATED   = "kyc.document_type_updated"
+    KYC_DOCUMENT_ACCESSED       = "kyc.document_accessed"
+    KYC_DOCUMENT_REQUESTED      = "kyc.document_requested"
+    KYC_DOCUMENT_REQUEST_FULFILLED = "kyc.document_request_fulfilled"
+    KYC_DOCUMENT_VERIFIED       = "kyc.document_verified"
+    KYC_VERIFICATION_CALL       = "kyc.verification_call"
+    KYC_CALL_NOTES_SAVED        = "kyc.call_notes_saved"
 
     # ── Purchase ──────────────────────────────────────────────────────────────
     PURCHASE_REQUEST_CREATED  = "purchase.request_created"

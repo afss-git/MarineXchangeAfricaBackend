@@ -57,6 +57,7 @@ from app.core.rate_limit import limiter
 from app.db.client import check_db_connection, close_pool, create_pool
 from app.middleware.request_context import RequestContextMiddleware
 from app.routers import admin_router, auth_router, auctions_router, deals_router, documents_router, exchange_rates_router, kyc_router, marketplace_router, notifications_router, payments_router, purchase_requests_router, reports_router, seller_router
+from app.routers.webhooks import twilio_webhook_router
 from app.scheduler import start_scheduler, stop_scheduler
 
 logging.basicConfig(
@@ -189,8 +190,8 @@ app.include_router(reports_router, prefix="/api/v1")
 app.include_router(seller_router, prefix="/api/v1")
 app.include_router(exchange_rates_router, prefix="/api/v1")
 
-# Placeholder routers — will be added in subsequent phases
-# (auctions_router and purchase_requests_router are now live above)
+# ── Webhooks (no /api/v1 prefix — called by external services) ───────────────
+app.include_router(twilio_webhook_router)
 
 
 # ── Health Check ──────────────────────────────────────────────────────────────
