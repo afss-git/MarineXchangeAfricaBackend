@@ -164,7 +164,11 @@ function PhoneVerificationCard() {
     setLoading(true)
     setError(null)
     try {
-      await kycBuyer.sendPhoneOtp(phone.trim())
+      const res = await kycBuyer.sendPhoneOtp(phone.trim())
+      // In non-production, the API returns the code directly (Twilio trial workaround)
+      if (res.code) {
+        setCode(res.code)
+      }
       setStep("verify")
     } catch (e: unknown) {
       setError((e as Error)?.message ?? "Failed to send OTP")

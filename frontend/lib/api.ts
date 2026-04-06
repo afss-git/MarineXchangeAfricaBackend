@@ -2678,7 +2678,7 @@ export const kycAgent = {
 
 export const kycBuyer = {
   sendPhoneOtp: (phone: string) =>
-    request<{ message: string; phone: string }>("/kyc/me/phone/send-otp", {
+    request<{ message: string; phone: string; code?: string; note?: string }>("/kyc/me/phone/send-otp", {
       method: "POST", body: JSON.stringify({ phone }),
     }),
 
