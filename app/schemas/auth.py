@@ -248,6 +248,7 @@ class UserProfileResponse(BaseModel):
     avatar_url: str | None = None
     roles: list[str]
     kyc_status: str
+    phone_verified: bool = False
     is_active: bool
     created_at: str
 

@@ -579,6 +579,7 @@ def build_profile_response(profile: dict | asyncpg.Record) -> UserProfileRespons
         country=p.get("country"),
         roles=p["roles"],
         kyc_status=p["kyc_status"],
+        phone_verified=bool(p.get("phone_verified", False)),
         is_active=p["is_active"],
         created_at=str(p["created_at"]),
     )
