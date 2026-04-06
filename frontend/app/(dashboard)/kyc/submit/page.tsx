@@ -162,7 +162,7 @@ export default function KYCSubmitPage() {
       if (status.status === "fulfilled") {
         const s = status.value
         // If already has rejected or requires_resubmission, use resubmit endpoint
-        setIsResubmit(["rejected", "requires_resubmission"].includes(s?.status ?? ""))
+        setIsResubmit(["rejected", "requires_resubmission"].includes(s?.kyc_status ?? ""))
       }
     } catch (e) {
       setLoadError(e instanceof ApiRequestError ? e.message : "Failed to load KYC data.")

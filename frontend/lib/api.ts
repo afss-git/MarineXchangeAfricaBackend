@@ -152,6 +152,10 @@ export interface KycStatusResponse {
   documents: KycDocument[]
   rejection_reason: string | null
   required_document_types: { id: string; name: string; slug: string; is_required: boolean }[]
+  optional_document_types: { id: string; name: string; slug: string; is_required: boolean }[]
+  uploaded_document_count: number
+  phone_verified: boolean
+  phone: string | null
 }
 
 export interface DocumentTypeResponse {

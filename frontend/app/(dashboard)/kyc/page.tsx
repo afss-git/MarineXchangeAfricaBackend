@@ -10,147 +10,115 @@ import {
   Clock,
   Check,
   Mail,
-  Unlock,
   ArrowRight,
-  RefreshCw,
   AlertCircle,
   CheckCircle2,
   XCircle,
   Phone,
   Loader2,
   FileQuestion,
+  Upload,
+  FileText,
+  Lock,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { cn } from "@/lib/utils"
-import { kycBuyer, type DocumentRequestResponse } from "@/lib/api"
+import {
+  kycBuyer,
+  type DocumentRequestResponse,
+} from "@/lib/api"
 import { useKycStatus } from "@/lib/hooks"
 
-const nextSteps = [
-  {
-    icon: ShieldCheck,
-    title: "Document Review",
-    desc: "Our team verifies your documents within 1–2 business days.",
-  },
-  {
-    icon: Mail,
-    title: "Email Notification",
-    desc: "You'll be notified by email when approved or if more info is needed.",
-  },
-  {
-    icon: Unlock,
-    title: "Full Access",
-    desc: "Once approved, submit purchase requests and bid in live auctions.",
-  },
-]
 
-function statusBannerProps(status: string) {
-  switch (status) {
-    case "approved":
-      return {
-        bg: "bg-success/10 border-success/20",
-        icon: CheckCircle2,
-        iconColor: "text-success",
-        iconBg: "bg-success/20",
-        title: "KYC Verified",
-        desc: "Your identity has been verified. You have full trading access.",
-      }
-    case "rejected":
-      return {
-        bg: "bg-danger/10 border-danger/20",
-        icon: XCircle,
-        iconColor: "text-danger",
-        iconBg: "bg-danger/20",
-        title: "KYC Rejected",
-        desc: "Your application was rejected. Please review the reason and resubmit.",
-      }
-    case "requires_resubmission":
-      return {
-        bg: "bg-warning/10 border-warning/20",
-        icon: RefreshCw,
-        iconColor: "text-warning",
-        iconBg: "bg-warning/20",
-        title: "Resubmission Required",
-        desc: "Additional documents or corrections are needed. Please resubmit.",
-      }
-    case "under_review":
-    case "submitted":
-      return {
-        bg: "bg-warning/10 border-warning/20",
-        icon: Clock,
-        iconColor: "text-warning",
-        iconBg: "bg-warning/20",
-        title: "Verification Pending",
-        desc: "Your documents are under review. This typically takes 1–2 business days.",
-      }
-    default:
-      return {
-        bg: "bg-ocean/10 border-ocean/20",
-        icon: ShieldCheck,
-        iconColor: "text-ocean",
-        iconBg: "bg-ocean/20",
-        title: "Not Submitted",
-        desc: "Submit your documents to start the verification process.",
-      }
-  }
-}
+// ── Step indicator ───────────────────────────────────────────────────────────
 
-function stepIndex(status: string): number {
-  switch (status) {
-    case "approved": return 3
-    case "under_review":
-    case "submitted": return 2
-    case "draft":
-    case "requires_resubmission":
-    case "rejected": return 1
-    default: return 0
-  }
-}
-
-function PageSkeleton() {
+function StepIndicator({ stepNum, label, status }: {
+  stepNum: number
+  label: string
+  status: "completed" | "active" | "upcoming"
+}) {
   return (
-    <div className="space-y-6 max-w-4xl animate-pulse">
-      <div className="h-24 bg-gray-200 rounded-xl" />
-      <div className="h-32 bg-gray-200 rounded-xl" />
-      <div className="h-48 bg-gray-200 rounded-xl" />
+    <div className="flex items-center gap-3">
+      <div className={cn(
+        "w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold shrink-0",
+        status === "completed" && "bg-success text-white",
+        status === "active" && "bg-ocean text-white ring-4 ring-ocean/20",
+        status === "upcoming" && "bg-gray-100 text-text-secondary",
+      )}>
+        {status === "completed" ? <Check className="w-4 h-4" /> : stepNum}
+      </div>
+      <span className={cn(
+        "text-sm",
+        status === "completed" && "text-success font-medium",
+        status === "active" && "text-text-primary font-semibold",
+        status === "upcoming" && "text-text-secondary",
+      )}>
+        {label}
+      </span>
     </div>
   )
 }
 
-// ── Phone OTP Verification Card ───────────────────────────────────────────────
+function ProgressStepper({ phoneVerified, hasDocRequests, docsUploaded, kycStatus }: {
+  phoneVerified: boolean
+  hasDocRequests: boolean
+  docsUploaded: boolean
+  kycStatus: string
+}) {
+  const isApproved = kycStatus === "approved"
+  const isUnderReview = ["submitted", "under_review"].includes(kycStatus)
 
-function PhoneVerificationCard() {
-  const { user } = useAuth()
-  const [phone, setPhone] = useState("")
+  const step1 = phoneVerified ? "completed" : "active"
+  const step2 = !phoneVerified ? "upcoming" : (hasDocRequests && docsUploaded && (isUnderReview || isApproved)) ? "completed" : phoneVerified ? "active" : "upcoming"
+  const step3 = isUnderReview ? "active" : isApproved ? "completed" : "upcoming"
+  const step4 = isApproved ? "completed" : "upcoming"
+
+  return (
+    <div className="bg-white rounded-xl border border-border p-5 shadow-sm">
+      <h2 className="text-sm font-semibold text-text-primary mb-4">Verification Progress</h2>
+      <div className="space-y-3">
+        <StepIndicator stepNum={1} label="Verify Phone Number" status={step1} />
+        <div className="ml-4 border-l-2 border-gray-200 h-3" />
+        <StepIndicator stepNum={2} label="Upload Requested Documents" status={step2} />
+        <div className="ml-4 border-l-2 border-gray-200 h-3" />
+        <StepIndicator stepNum={3} label="Agent Review" status={step3} />
+        <div className="ml-4 border-l-2 border-gray-200 h-3" />
+        <StepIndicator stepNum={4} label="Verified — Full Trading Access" status={step4} />
+      </div>
+    </div>
+  )
+}
+
+
+// ── Phone OTP Verification ───────────────────────────────────────────────────
+
+function PhoneVerificationStep({ phone: existingPhone, verified, onVerified }: {
+  phone?: string | null
+  verified: boolean
+  onVerified: () => void
+}) {
+  const [phone, setPhone] = useState(existingPhone || "")
   const [code, setCode] = useState("")
-  const [step, setStep] = useState<"input" | "verify" | "done">("input")
+  const [step, setStep] = useState<"input" | "verify" | "done">(verified ? "done" : "input")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // If already verified, show done state
-  const isVerified = user?.phone_verified === true
-  if (isVerified) {
+  if (verified || step === "done") {
     return (
-      <div className="bg-white rounded-xl border border-border shadow-sm p-5">
+      <div className="bg-white rounded-xl border border-success/20 shadow-sm p-5">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center shrink-0">
             <Phone className="w-5 h-5 text-success" />
           </div>
-          <div>
+          <div className="flex-1">
             <p className="font-semibold text-text-primary flex items-center gap-2">
               Phone Verified <CheckCircle2 className="w-4 h-4 text-success" />
             </p>
-            <p className="text-sm text-text-secondary">{user?.phone ?? "Verified"}</p>
+            <p className="text-sm text-text-secondary">{existingPhone || phone || "Verified"}</p>
           </div>
+          <Badge className="bg-success/10 text-success border-success/20 text-xs">Step 1 Complete</Badge>
         </div>
       </div>
     )
@@ -158,17 +126,14 @@ function PhoneVerificationCard() {
 
   async function handleSendOtp() {
     if (!phone.trim() || !phone.startsWith("+")) {
-      setError("Enter a valid phone number in E.164 format (e.g. +234...)")
+      setError("Enter a valid phone number in E.164 format (e.g. +2348012345678)")
       return
     }
     setLoading(true)
     setError(null)
     try {
       const res = await kycBuyer.sendPhoneOtp(phone.trim())
-      // In non-production, the API returns the code directly (Twilio trial workaround)
-      if (res.code) {
-        setCode(res.code)
-      }
+      if (res.code) setCode(res.code)
       setStep("verify")
     } catch (e: unknown) {
       setError((e as Error)?.message ?? "Failed to send OTP")
@@ -178,12 +143,13 @@ function PhoneVerificationCard() {
   }
 
   async function handleVerifyOtp() {
-    if (!code.trim()) { setError("Enter the OTP code from your SMS."); return }
+    if (!code.trim()) { setError("Enter the OTP code."); return }
     setLoading(true)
     setError(null)
     try {
       await kycBuyer.verifyPhoneOtp(phone.trim(), code.trim())
       setStep("done")
+      onVerified()
     } catch (e: unknown) {
       setError((e as Error)?.message ?? "Invalid or expired code")
     } finally {
@@ -191,152 +157,348 @@ function PhoneVerificationCard() {
     }
   }
 
-  if (step === "done") {
-    return (
-      <div className="bg-white rounded-xl border border-success/20 shadow-sm p-5">
+  return (
+    <div className="bg-white rounded-xl border border-ocean/20 shadow-sm overflow-hidden">
+      <div className="px-5 py-4 bg-ocean/5 border-b border-ocean/20">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center">
-            <CheckCircle2 className="w-5 h-5 text-success" />
-          </div>
+          <div className="w-8 h-8 rounded-full bg-ocean text-white flex items-center justify-center text-sm font-semibold">1</div>
           <div>
-            <p className="font-semibold text-success">Phone Verified Successfully</p>
-            <p className="text-sm text-text-secondary">{phone}</p>
+            <p className="font-semibold text-text-primary">Verify Your Phone Number</p>
+            <p className="text-sm text-text-secondary">We&apos;ll send a one-time code via SMS to verify your number.</p>
           </div>
+        </div>
+      </div>
+
+      <div className="p-5 space-y-4">
+        {step === "input" ? (
+          <div className="flex gap-2">
+            <Input
+              placeholder="+2348012345678"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className="flex-1"
+            />
+            <Button onClick={handleSendOtp} disabled={loading} className="bg-ocean hover:bg-ocean-dark text-white gap-1.5">
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+              Send Code
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-text-secondary">
+              Enter the 6-digit code sent to <strong>{phone}</strong>
+            </p>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Enter code..."
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                maxLength={8}
+                className="flex-1"
+              />
+              <Button onClick={handleVerifyOtp} disabled={loading} className="bg-ocean hover:bg-ocean-dark text-white gap-1.5">
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                Verify
+              </Button>
+            </div>
+            <button
+              onClick={() => { setStep("input"); setCode(""); setError(null) }}
+              className="text-xs text-ocean hover:underline"
+            >
+              Change number or resend
+            </button>
+          </div>
+        )}
+
+        {error && (
+          <div className="flex items-center gap-2 p-3 bg-danger/10 border border-danger/20 rounded-lg text-danger text-sm">
+            <AlertCircle className="w-4 h-4 shrink-0" />{error}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+
+// ── Document Requests & Upload (Step 2) ──────────────────────────────────────
+
+function DocumentRequestsStep({ phoneVerified }: { phoneVerified: boolean }) {
+  const [requests, setRequests] = useState<DocumentRequestResponse[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!phoneVerified) { setLoading(false); return }
+    kycBuyer.listDocumentRequests()
+      .then(setRequests)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [phoneVerified])
+
+  if (!phoneVerified) {
+    return (
+      <div className="bg-gray-50 rounded-xl border border-border p-5 opacity-60">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-gray-200 text-text-secondary flex items-center justify-center text-sm font-semibold">2</div>
+          <div>
+            <p className="font-semibold text-text-secondary">Upload Documents</p>
+            <p className="text-sm text-text-secondary">Complete phone verification first to unlock this step.</p>
+          </div>
+          <Lock className="w-5 h-5 text-text-secondary ml-auto" />
+        </div>
+      </div>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-xl border border-border p-8 flex items-center justify-center">
+        <Loader2 className="w-5 h-5 text-ocean animate-spin" />
+      </div>
+    )
+  }
+
+  const pending = requests.filter((r) => r.status === "pending")
+  const fulfilled = requests.filter((r) => r.status === "uploaded")
+  const waived = requests.filter((r) => r.status === "waived")
+
+  if (requests.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-ocean/20 shadow-sm overflow-hidden">
+        <div className="px-5 py-4 bg-ocean/5 border-b border-ocean/20">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-ocean text-white flex items-center justify-center text-sm font-semibold">2</div>
+            <div>
+              <p className="font-semibold text-text-primary">Upload Documents</p>
+              <p className="text-sm text-text-secondary">A verification agent will review your profile and request specific documents.</p>
+            </div>
+          </div>
+        </div>
+        <div className="p-8 text-center">
+          <div className="w-14 h-14 rounded-full bg-ocean/10 flex items-center justify-center mx-auto mb-4">
+            <Clock className="w-7 h-7 text-ocean" />
+          </div>
+          <p className="font-semibold text-text-primary">Waiting for Agent Assignment</p>
+          <p className="text-sm text-text-secondary mt-1 max-w-sm mx-auto">
+            Your phone is verified. A verification agent will be assigned to your profile
+            and will request the specific documents needed. You&apos;ll be notified by email.
+          </p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="bg-white rounded-xl border border-border shadow-sm p-5 space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-ocean/10 flex items-center justify-center shrink-0">
-          <Phone className="w-5 h-5 text-ocean" />
-        </div>
-        <div>
-          <p className="font-semibold text-text-primary">Verify Your Phone Number</p>
-          <p className="text-sm text-text-secondary">
-            We&apos;ll send a one-time code via SMS to verify your phone number.
-          </p>
-        </div>
-      </div>
-
-      {step === "input" ? (
-        <div className="flex gap-2">
-          <Input
-            placeholder="+234 801 234 5678"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            className="flex-1"
-          />
-          <Button onClick={handleSendOtp} disabled={loading} className="bg-ocean hover:bg-ocean-dark text-white gap-1.5">
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
-            Send Code
-          </Button>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          <p className="text-sm text-text-secondary">
-            Enter the 6-digit code sent to <strong>{phone}</strong>
-          </p>
-          <div className="flex gap-2">
-            <Input
-              placeholder="Enter code..."
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              maxLength={8}
-              className="flex-1"
-            />
-            <Button onClick={handleVerifyOtp} disabled={loading} className="bg-ocean hover:bg-ocean-dark text-white gap-1.5">
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-              Verify
-            </Button>
-          </div>
-          <button
-            onClick={() => { setStep("input"); setCode(""); setError(null) }}
-            className="text-xs text-ocean hover:underline"
-          >
-            Change number or resend
-          </button>
-        </div>
-      )}
-
-      {error && (
-        <div className="flex items-center gap-2 p-3 bg-danger/10 border border-danger/20 rounded-lg text-danger text-sm">
-          <AlertCircle className="w-4 h-4 shrink-0" />{error}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Document Requests Card ────────────────────────────────────────────────────
-
-function DocumentRequestsCard() {
-  const [requests, setRequests] = useState<DocumentRequestResponse[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    kycBuyer.listDocumentRequests()
-      .then(setRequests)
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
-
-  const pending = requests.filter((r) => r.status === "pending")
-
-  if (loading || pending.length === 0) return null
-
-  return (
-    <div className="bg-white rounded-xl border border-warning/20 shadow-sm overflow-hidden">
-      <div className="px-5 py-4 bg-warning/5 border-b border-warning/20">
+    <div className="bg-white rounded-xl border border-ocean/20 shadow-sm overflow-hidden">
+      <div className="px-5 py-4 bg-ocean/5 border-b border-ocean/20">
         <div className="flex items-center gap-3">
-          <FileQuestion className="w-5 h-5 text-warning" />
-          <div>
-            <p className="font-semibold text-text-primary">Documents Requested</p>
+          <div className="w-8 h-8 rounded-full bg-ocean text-white flex items-center justify-center text-sm font-semibold">2</div>
+          <div className="flex-1">
+            <p className="font-semibold text-text-primary">Requested Documents</p>
             <p className="text-sm text-text-secondary">
-              Our verification team needs the following documents from you.
+              Upload the documents your verification agent has requested.
             </p>
           </div>
+          {pending.length > 0 && (
+            <Badge className="bg-warning/10 text-warning border-warning/20 text-xs">
+              {pending.length} pending
+            </Badge>
+          )}
         </div>
       </div>
+
       <div className="divide-y divide-border">
-        {pending.map((req) => (
-          <div key={req.id} className="flex items-center gap-3 px-5 py-3">
-            <FileQuestion className="w-4 h-4 text-warning shrink-0" />
+        {requests.map((req) => (
+          <div key={req.id} className="flex items-center gap-3 px-5 py-4">
+            {req.status === "uploaded" ? (
+              <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
+            ) : req.status === "waived" ? (
+              <Check className="w-5 h-5 text-text-secondary shrink-0" />
+            ) : (
+              <FileQuestion className="w-5 h-5 text-warning shrink-0" />
+            )}
             <div className="flex-1">
               <p className="text-sm font-medium text-text-primary">{req.document_type_name}</p>
-              {req.reason && <p className="text-xs text-text-secondary">{req.reason}</p>}
+              {req.reason && <p className="text-xs text-text-secondary mt-0.5">{req.reason}</p>}
             </div>
             <Badge className={cn(
               "text-xs border capitalize",
-              req.priority === "required"
-                ? "bg-danger/10 text-danger border-danger/20"
-                : "bg-gray-100 text-text-secondary border-gray-200"
+              req.status === "uploaded" ? "bg-success/10 text-success border-success/20" :
+              req.status === "waived" ? "bg-gray-100 text-text-secondary border-gray-200" :
+              req.priority === "required" ? "bg-danger/10 text-danger border-danger/20" :
+              "bg-warning/10 text-warning border-warning/20"
             )}>
-              {req.priority}
+              {req.status === "uploaded" ? "Uploaded" : req.status === "waived" ? "Waived" : req.priority}
             </Badge>
           </div>
         ))}
       </div>
-      <div className="px-5 py-3 bg-gray-50 border-t border-border">
-        <Link href="/kyc/submit">
-          <Button size="sm" className="bg-ocean hover:bg-ocean-dark text-white gap-1.5">
-            <ArrowRight className="w-3.5 h-3.5" /> Upload Requested Documents
-          </Button>
-        </Link>
+
+      {pending.length > 0 && (
+        <div className="px-5 py-4 bg-gray-50 border-t border-border">
+          <Link href="/kyc/submit">
+            <Button className="bg-ocean hover:bg-ocean-dark text-white gap-1.5">
+              <Upload className="w-4 h-4" /> Upload Requested Documents
+              <ArrowRight className="w-4 h-4" />
+            </Button>
+          </Link>
+        </div>
+      )}
+
+      {pending.length === 0 && fulfilled.length > 0 && (
+        <div className="px-5 py-4 bg-success/5 border-t border-success/20">
+          <div className="flex items-center gap-2 text-sm text-success">
+            <CheckCircle2 className="w-4 h-4" />
+            <span className="font-medium">All requested documents uploaded — under agent review</span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+// ── Review Status (Step 3) ───────────────────────────────────────────────────
+
+function ReviewStatusStep({ kycStatus, rejectionReason, expiresAt }: {
+  kycStatus: string
+  rejectionReason?: string | null
+  expiresAt?: string | null
+}) {
+  if (kycStatus === "approved") {
+    return (
+      <div className="bg-success/5 rounded-xl border border-success/20 shadow-sm p-5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-5 h-5 text-success" />
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold text-success">KYC Verified — Full Trading Access</p>
+            <p className="text-sm text-text-secondary">
+              Your identity has been verified. You can submit purchase requests and bid in auctions.
+            </p>
+          </div>
+          {expiresAt && (
+            <div className="flex items-center gap-1.5 text-sm text-text-secondary shrink-0">
+              <Clock className="w-4 h-4" />
+              <span>Expires {new Date(expiresAt).toLocaleDateString()}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  if (kycStatus === "rejected") {
+    return (
+      <div className="bg-danger/5 rounded-xl border border-danger/20 shadow-sm p-5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-danger/10 flex items-center justify-center shrink-0">
+            <XCircle className="w-5 h-5 text-danger" />
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold text-danger">Verification Rejected</p>
+            <p className="text-sm text-text-secondary">
+              Please review the reason below and contact support if needed.
+            </p>
+            {rejectionReason && (
+              <p className="text-sm text-danger mt-2 font-medium bg-danger/5 p-3 rounded-lg border border-danger/10">
+                {rejectionReason}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (["submitted", "under_review"].includes(kycStatus)) {
+    return (
+      <div className="bg-warning/5 rounded-xl border border-warning/20 shadow-sm p-5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-warning/10 flex items-center justify-center shrink-0">
+            <Clock className="w-5 h-5 text-warning" />
+          </div>
+          <div>
+            <p className="font-semibold text-text-primary">Documents Under Review</p>
+            <p className="text-sm text-text-secondary">
+              Your verification agent is reviewing your documents. This typically takes 1–2 business days.
+              You&apos;ll be notified by email when complete.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return null
+}
+
+
+// ── Uploaded Documents Table ─────────────────────────────────────────────────
+
+interface KycDocBrief {
+  id: string
+  document_type_name: string
+  document_type_slug: string
+  original_name: string | null
+  uploaded_at: string
+}
+
+function UploadedDocumentsTable({ documents }: { documents: KycDocBrief[] }) {
+  if (!documents || documents.length === 0) return null
+
+  return (
+    <div className="bg-white rounded-xl border border-border shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-border">
+        <h2 className="text-sm font-semibold text-text-primary">Your Submitted Documents</h2>
+      </div>
+      <div className="divide-y divide-border">
+        {documents.map((doc) => (
+          <div key={doc.id} className="flex items-center gap-3 px-5 py-3">
+            <FileText className="w-4 h-4 text-ocean shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-text-primary truncate">
+                {doc.original_name ?? doc.document_type_name}
+              </p>
+              <p className="text-xs text-text-secondary">{doc.document_type_name}</p>
+            </div>
+            <span className="text-xs text-text-secondary shrink-0">
+              {new Date(doc.uploaded_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   )
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
+
+// ── Loading skeleton ─────────────────────────────────────────────────────────
+
+function PageSkeleton() {
+  return (
+    <div className="space-y-5 max-w-3xl animate-pulse">
+      <div className="h-8 w-48 bg-gray-200 rounded" />
+      <div className="h-32 bg-gray-200 rounded-xl" />
+      <div className="h-48 bg-gray-200 rounded-xl" />
+      <div className="h-32 bg-gray-200 rounded-xl" />
+    </div>
+  )
+}
+
+
+// ── Main Page ────────────────────────────────────────────────────────────────
 
 export default function KYCPage() {
   const { user } = useAuth()
   const isBuyer = user?.roles?.includes("buyer")
-  const { data: kycData, isLoading, error: swrError } = useKycStatus(!!isBuyer)
+  const { data: kycData, isLoading, error: swrError, mutate } = useKycStatus(!!isBuyer)
   const error = swrError?.message ?? null
+
+  // Use kycData for phone_verified (freshest source), fall back to user context
+  const phoneVerified = kycData?.phone_verified ?? user?.phone_verified ?? false
+  const kycStatus = kycData?.kyc_status ?? "not_submitted"
 
   // Seller-only accounts don't need KYC
   if (user && !isBuyer) {
@@ -368,33 +530,16 @@ export default function KYCPage() {
       <div className="flex items-center gap-3 p-4 bg-danger/10 border border-danger/20 rounded-xl text-danger max-w-2xl">
         <AlertCircle className="w-5 h-5 shrink-0" />
         <span className="text-sm">{error}</span>
-        <Button variant="outline" size="sm" onClick={() => window.location.reload()} className="ml-auto border-danger/30 text-danger">Retry</Button>
+        <Button variant="outline" size="sm" onClick={() => mutate()} className="ml-auto border-danger/30 text-danger">Retry</Button>
       </div>
     )
   }
 
-  const status = kycData?.kyc_status ?? "not_submitted"
-  const banner = statusBannerProps(status)
-  const BannerIcon = banner.icon
-  const currentStep = stepIndex(kycData?.current_submission_status ?? status)
-  const steps = [
-    { label: "Account Created", completed: currentStep >= 0 },
-    { label: "Documents Submitted", completed: currentStep >= 1 },
-    { label: "Under Review", completed: currentStep >= 2 },
-    { label: "Verified & Trading", completed: currentStep >= 3 },
-  ]
-
-  const docStatusStyle: Record<string, string> = {
-    submitted: "bg-ocean/10 text-ocean border-ocean/20",
-    under_review: "bg-warning/10 text-warning border-warning/20",
-    approved: "bg-success/10 text-success border-success/20",
-    rejected: "bg-danger/10 text-danger border-danger/20",
-  }
-
-  const canSubmit = status === "not_submitted" || status === "rejected" || status === "requires_resubmission"
+  const hasDocRequests = false // Will be determined by DocumentRequestsStep internally
+  const docsUploaded = (kycData?.uploaded_document_count ?? 0) > 0
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-5 max-w-3xl">
       {user?.id && (
         <PageTour pageKey="kyc" userId={String(user.id)} steps={KYC_TOUR} />
       )}
@@ -407,144 +552,33 @@ export default function KYCPage() {
         </p>
       </div>
 
-      {/* Status Banner */}
-      <div data-tour="kyc-status-banner" className={cn("flex flex-col gap-4 border rounded-xl p-5", banner.bg)}>
-        <div className="flex items-center gap-3">
-          <div className={cn("w-10 h-10 rounded-full flex items-center justify-center shrink-0", banner.iconBg)}>
-            <BannerIcon className={cn("w-5 h-5", banner.iconColor)} />
-          </div>
-          <div className="flex-1">
-            <p className="font-semibold text-text-primary">{banner.title}</p>
-            <p className="text-sm text-text-secondary">{banner.desc}</p>
-            {kycData?.rejection_reason && (
-              <p className="text-sm text-danger mt-1 font-medium">Reason: {kycData.rejection_reason}</p>
-            )}
-          </div>
-          {kycData?.kyc_expires_at && status === "approved" && (
-            <div className="flex items-center gap-1.5 text-sm text-text-secondary shrink-0">
-              <Clock className="w-4 h-4" />
-              <span>Expires {new Date(kycData.kyc_expires_at).toLocaleDateString()}</span>
-            </div>
-          )}
-        </div>
-        {canSubmit && (
-          <Link href="/kyc/submit" data-tour="kyc-action-btn" className="w-full sm:w-auto">
-            <Button className="w-full sm:w-auto bg-ocean hover:bg-ocean-dark text-white gap-2 h-11 text-sm font-semibold">
-              <ShieldCheck className="w-4 h-4" />
-              {status === "not_submitted" ? "Start Verification — Submit Documents" : "Resubmit Documents"}
-              <ArrowRight className="w-4 h-4" />
-            </Button>
-          </Link>
-        )}
-      </div>
-
       {/* Progress Stepper */}
-      <div data-tour="kyc-progress" className="bg-white rounded-xl border border-border p-6 shadow-sm">
-        <h2 className="text-sm font-semibold text-text-primary mb-6">Verification Progress</h2>
-        <div className="flex items-start">
-          {steps.map((step, index) => (
-            <div key={step.label} className="flex items-center flex-1">
-              <div className="flex flex-col items-center">
-                <div className={cn(
-                  "w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold transition-colors",
-                  step.completed
-                    ? index === currentStep && currentStep < 3
-                      ? "bg-ocean text-white ring-4 ring-ocean/20"
-                      : "bg-success text-white"
-                    : "bg-gray-100 text-text-secondary"
-                )}>
-                  {step.completed && !(index === currentStep && currentStep < 3)
-                    ? <Check className="w-4 h-4" />
-                    : step.completed
-                    ? <span className="relative flex h-3 w-3">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
-                        <span className="relative inline-flex rounded-full h-3 w-3 bg-white" />
-                      </span>
-                    : index + 1}
-                </div>
-                <span className={cn(
-                  "mt-2 text-xs text-center max-w-20",
-                  step.completed ? "text-text-primary font-medium" : "text-text-secondary"
-                )}>
-                  {step.label}
-                </span>
-              </div>
-              {index < steps.length - 1 && (
-                <div className={cn(
-                  "flex-1 h-0.5 mx-2 mb-6",
-                  steps[index + 1].completed ? "bg-success" : "bg-gray-200"
-                )} />
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
+      <ProgressStepper
+        phoneVerified={phoneVerified}
+        hasDocRequests={docsUploaded}
+        docsUploaded={docsUploaded}
+        kycStatus={kycStatus}
+      />
 
-      {/* Documents Table */}
-      {kycData && kycData.documents?.length > 0 && (
-        <div className="bg-white rounded-xl border border-border shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-            <h2 className="text-base font-semibold text-text-primary">Submitted Documents</h2>
-            {canSubmit && (
-              <Link href="/kyc/submit">
-                <Button variant="outline" size="sm" className="border-ocean text-ocean hover:bg-ocean/5">
-                  <RefreshCw className="w-4 h-4 mr-1.5" /> Re-submit
-                </Button>
-              </Link>
-            )}
-          </div>
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead>Document Type</TableHead>
-                <TableHead className="hidden sm:table-cell">File</TableHead>
-                <TableHead className="hidden md:table-cell">Uploaded</TableHead>
-                <TableHead className="text-right">Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {kycData.documents.map((doc) => (
-                <TableRow key={doc.id}>
-                  <TableCell className="font-medium text-sm text-text-primary">{doc.document_type_name}</TableCell>
-                  <TableCell className="hidden sm:table-cell text-sm text-text-secondary">
-                    {doc.original_name ?? doc.document_type_slug}
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell text-sm text-text-secondary">
-                    {new Date(doc.uploaded_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Badge className={cn("text-xs border", docStatusStyle["submitted"] ?? "bg-gray-100 text-text-secondary")}>
-                      Submitted
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+      {/* Review Status Banner (if applicable) */}
+      <ReviewStatusStep
+        kycStatus={kycStatus}
+        rejectionReason={kycData?.rejection_reason}
+        expiresAt={kycData?.kyc_expires_at}
+      />
 
-      {/* Phone Verification */}
-      <PhoneVerificationCard />
+      {/* Step 1: Phone Verification */}
+      <PhoneVerificationStep
+        phone={kycData?.phone}
+        verified={phoneVerified}
+        onVerified={() => mutate()}
+      />
 
-      {/* Document Requests from Agent */}
-      <DocumentRequestsCard />
+      {/* Step 2: Document Requests */}
+      <DocumentRequestsStep phoneVerified={phoneVerified} />
 
-      {/* What happens next */}
-      <div>
-        <h2 className="text-base font-semibold text-text-primary mb-4">What Happens Next</h2>
-        <div className="grid gap-4 sm:grid-cols-3">
-          {nextSteps.map((step) => (
-            <div key={step.title} className="bg-white rounded-xl border border-border p-5 shadow-sm">
-              <div className="w-10 h-10 rounded-lg bg-ocean/10 flex items-center justify-center mb-4">
-                <step.icon className="w-5 h-5 text-ocean" />
-              </div>
-              <h3 className="font-semibold text-text-primary mb-1">{step.title}</h3>
-              <p className="text-sm text-text-secondary leading-relaxed">{step.desc}</p>
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* Uploaded Documents */}
+      <UploadedDocumentsTable documents={kycData?.documents ?? []} />
 
       {/* Help Card */}
       <div className="bg-navy/5 border border-navy/10 rounded-xl p-5">
