@@ -198,7 +198,8 @@ async def post_call_notes(
 
 
 class DocumentRequestItem(BaseModel):
-    document_type_id: UUID
+    document_type_id: Optional[UUID] = None
+    custom_document_name: Optional[str] = None
     reason: str = ""
     priority: str = Field(default="required", description="required | recommended")
 
