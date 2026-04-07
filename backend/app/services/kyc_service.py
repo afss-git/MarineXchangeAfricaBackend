@@ -1333,7 +1333,7 @@ async def create_document_requests(
             """
             INSERT INTO kyc.assignments (submission_id, agent_id, assigned_by, status)
             VALUES ($1, $2, $2, 'in_review')
-            ON CONFLICT (submission_id, agent_id) DO NOTHING
+            ON CONFLICT (submission_id) DO NOTHING
             """,
             submission_id, agent_id,
         )
