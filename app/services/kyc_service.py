@@ -1538,14 +1538,19 @@ async def replace_document_for_request(
     """
     import hashlib, mimetypes as _mimetypes
 
-    # 1. Load the request
+    # 1. Load the request + verify buyer via the submission
     req = await db.fetchrow(
-        "SELECT * FROM kyc.document_requests WHERE id = $1",
+        """
+        SELECT dr.*, s.buyer_id AS submission_buyer_id
+        FROM kyc.document_requests dr
+        JOIN kyc.submissions s ON s.id = dr.submission_id
+        WHERE dr.id = $1
+        """,
         request_id,
     )
     if not req:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document request not found.")
-    if str(req["buyer_id"]) != str(buyer_id):
+    if str(req["submission_buyer_id"]) != str(buyer_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
 
     submission_id = req["submission_id"]
