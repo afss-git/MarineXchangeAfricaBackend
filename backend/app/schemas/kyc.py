@@ -177,9 +177,9 @@ class PaginatedKycSubmissionsResponse(BaseModel):
 class KycDocumentBrief(BaseModel):
     """Brief document info for the KYC dashboard."""
     id:                  UUID
-    document_type_id:    UUID
+    document_type_id:    UUID | None
     document_type_name:  str
-    document_type_slug:  str
+    document_type_slug:  str | None
     original_name:       str | None
     uploaded_at:         datetime
 
