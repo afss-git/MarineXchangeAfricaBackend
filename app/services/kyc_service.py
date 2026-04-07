@@ -1563,14 +1563,14 @@ async def verify_document(
     row = await db.fetchrow(
         """
         INSERT INTO kyc.document_verifications
-            (document_id, verified_by, status, checklist_results,
-             extracted_data, rejection_reason, notes)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+            (document_id, submission_id, verified_by, verifier_role, status,
+             checklist_results, extracted_data, rejection_reason, notes)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *
         """,
-        document_id, verified_by, verification_status,
-        json.dumps(checklist_results) if checklist_results else None,
-        json.dumps(extracted_data) if extracted_data else None,
+        document_id, doc["submission_id"], verified_by, "buyer_agent", verification_status,
+        json.dumps(checklist_results) if checklist_results else "[]",
+        json.dumps(extracted_data) if extracted_data else "{}",
         rejection_reason, notes,
     )
 
