@@ -98,6 +98,17 @@ class UpdateDocumentTypeRequest(BaseModel):
 # KYC DOCUMENTS
 # ══════════════════════════════════════════════════════════════════════════════
 
+class DocVerificationBrief(BaseModel):
+    """Embedded latest verification outcome for a document."""
+    status:             str
+    rejection_reason:   str | None = None
+    notes:              str | None = None
+    verified_by_name:   str | None = None
+    created_at:         datetime
+
+    model_config = {"from_attributes": True}
+
+
 class KycDocumentResponse(BaseModel):
     """A single uploaded KYC document."""
     id:                 UUID
@@ -112,6 +123,7 @@ class KycDocumentResponse(BaseModel):
     mime_type:          str | None
     file_hash:          str     # SHA-256
     uploaded_at:        datetime
+    verification:       DocVerificationBrief | None = None
 
     model_config = {"from_attributes": True}
 
@@ -178,10 +190,11 @@ class KycDocumentBrief(BaseModel):
     """Brief document info for the KYC dashboard."""
     id:                  UUID
     document_type_id:    UUID | None
-    document_type_name:  str
+    document_type_name:  str | None
     document_type_slug:  str | None
     original_name:       str | None
     uploaded_at:         datetime
+    verification:        DocVerificationBrief | None = None
 
 
 class KycStatusResponse(BaseModel):

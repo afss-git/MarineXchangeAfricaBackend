@@ -149,12 +149,32 @@ async def _get_full_submission(
     if not is_privileged and str(sub["buyer_id"]) != str(actor_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
 
-    # Documents
+    # Latest verification per document
+    ver_rows = await db.fetch(
+        """
+        SELECT DISTINCT ON (document_id)
+            document_id, status, rejection_reason, notes, extracted_data,
+            checklist_results, verified_by, created_at,
+            p.full_name AS verified_by_name
+        FROM kyc.document_verifications dv
+        LEFT JOIN public.profiles p ON p.id = dv.verified_by
+        WHERE dv.submission_id = $1
+        ORDER BY document_id, dv.created_at DESC
+        """,
+        submission_id,
+    )
+    verifications_by_doc = {str(r["document_id"]): dict(r) for r in ver_rows}
+
+    # Documents (enriched with latest verification status)
     raw_docs = await db.fetch(
         "SELECT * FROM kyc.documents WHERE submission_id = $1 AND deleted_at IS NULL ORDER BY uploaded_at",
         submission_id,
     )
-    docs = [await _enrich_document(db, d) for d in raw_docs]
+    docs = []
+    for d in raw_docs:
+        enriched = await _enrich_document(db, d)
+        enriched["verification"] = verifications_by_doc.get(str(d["id"]))
+        docs.append(enriched)
 
     # Reviews
     raw_reviews = await db.fetch(
@@ -326,13 +346,13 @@ async def get_kyc_status(db: asyncpg.Connection, buyer_id: uuid.UUID) -> dict:
                 sub_id,
             ) or 0
 
-    # Fetch documents for the current submission
+    # Fetch documents with latest verification per document
     documents = []
     if sub_id:
         doc_rows = await db.fetch(
             """
-            SELECT d.id, d.document_type_id, COALESCE(dt.name, d.original_name) AS document_type_name, dt.slug AS document_type_slug,
-                   d.original_name, d.uploaded_at
+            SELECT d.id, d.document_type_id, COALESCE(dt.name, d.original_name) AS document_type_name,
+                   dt.slug AS document_type_slug, d.original_name, d.uploaded_at
             FROM kyc.documents d
             LEFT JOIN kyc.document_types dt ON dt.id = d.document_type_id
             WHERE d.submission_id = $1 AND d.deleted_at IS NULL
@@ -340,7 +360,23 @@ async def get_kyc_status(db: asyncpg.Connection, buyer_id: uuid.UUID) -> dict:
             """,
             sub_id,
         )
-        documents = [dict(r) for r in doc_rows]
+        ver_rows = await db.fetch(
+            """
+            SELECT DISTINCT ON (document_id)
+                document_id, status, rejection_reason, notes, created_at,
+                p.full_name AS verified_by_name
+            FROM kyc.document_verifications dv
+            LEFT JOIN public.profiles p ON p.id = dv.verified_by
+            WHERE dv.submission_id = $1
+            ORDER BY document_id, dv.created_at DESC
+            """,
+            sub_id,
+        )
+        ver_by_doc = {str(r["document_id"]): dict(r) for r in ver_rows}
+        for r in doc_rows:
+            d = dict(r)
+            d["verification"] = ver_by_doc.get(str(r["id"]))
+            documents.append(d)
 
     return {
         "kyc_status": profile["kyc_status"],
@@ -1586,6 +1622,32 @@ async def verify_document(
             "has_checklist": checklist_results is not None,
         },
     )
+
+    # Notify buyer of the verification outcome
+    try:
+        buyer_row = await db.fetchrow(
+            """
+            SELECT u.email, p.full_name
+            FROM kyc.documents d
+            JOIN kyc.submissions s ON s.id = d.submission_id
+            JOIN public.profiles p ON p.id = s.buyer_id
+            JOIN auth.users u ON u.id = s.buyer_id
+            WHERE d.id = $1
+            """,
+            document_id,
+        )
+        if buyer_row:
+            doc_name = doc.get("original_name") or "your document"
+            await notification_service.send_document_verification_update(
+                buyer_email=buyer_row["email"],
+                buyer_name=buyer_row["full_name"] or "Valued Member",
+                document_name=doc_name,
+                status=verification_status,
+                rejection_reason=rejection_reason,
+                notes=notes,
+            )
+    except Exception as exc:
+        logger.warning("Failed to send document verification email: %s", exc)
 
     return dict(row)
 

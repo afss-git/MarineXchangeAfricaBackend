@@ -577,6 +577,57 @@ async def send_document_request(
     )
 
 
+async def send_document_verification_update(
+    buyer_email: str,
+    buyer_name: str,
+    document_name: str,
+    status: str,
+    rejection_reason: str | None = None,
+    notes: str | None = None,
+) -> None:
+    """Notify buyer of the per-document verification outcome from an agent."""
+    if status == "verified":
+        subject = f"Document Verified — {document_name}"
+        colour = "#16a34a"
+        headline = f"Your document <strong>{document_name}</strong> has been verified."
+        body = "<p>Our verification agent has reviewed and approved this document.</p>"
+    elif status == "rejected":
+        subject = f"Document Rejected — {document_name} Needs Re-upload"
+        colour = "#dc2626"
+        headline = f"Your document <strong>{document_name}</strong> was not accepted."
+        reason_html = f"<p><strong>Reason:</strong> {rejection_reason}</p>" if rejection_reason else ""
+        body = f"<p>Please log in and upload a new version of this document.</p>{reason_html}"
+    else:  # needs_clarification
+        subject = f"Clarification Needed — {document_name}"
+        colour = "#d97706"
+        headline = f"Your verification agent needs clarification on <strong>{document_name}</strong>."
+        body = "<p>Please log in to your account to view the details and respond.</p>"
+
+    notes_html = f"<p><em>Agent note: {notes}</em></p>" if notes else ""
+
+    await _send(
+        to=buyer_email,
+        subject=subject,
+        html=f"""
+        <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
+          <div style="background:{colour};padding:16px 24px;border-radius:8px 8px 0 0">
+            <h2 style="color:#fff;margin:0;font-size:18px">Document Review Update</h2>
+          </div>
+          <div style="padding:24px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px">
+            <p>Dear {buyer_name},</p>
+            <p>{headline}</p>
+            {body}
+            {notes_html}
+            <p>Log in to your MarineXchange Africa account to view the full status of your verification.</p>
+            <br/>
+            <p>Best regards,<br/><strong>MarineXchange Africa Verification Team</strong></p>
+          </div>
+        </div>
+        """,
+        tags=[{"name": "category", "value": "kyc_document_verification"}],
+    )
+
+
 # ── Staff Invite ──────────────────────────────────────────────────────────────
 
 async def send_staff_welcome(
