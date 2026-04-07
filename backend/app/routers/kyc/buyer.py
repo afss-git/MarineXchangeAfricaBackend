@@ -35,6 +35,7 @@ from app.services.kyc_service import (
     get_signed_url_with_logging,
     list_buyer_documents,
     list_document_requests,
+    replace_document_for_request,
     start_resubmission,
     submit_kyc,
     upload_kyc_document,
@@ -253,6 +254,27 @@ async def fulfill_request(
 ):
     buyer_id = UUID(str(current_user["id"]))
     return await fulfill_document_request(db, request_id, payload.document_id, buyer_id)
+
+
+@router.post(
+    "/me/document-requests/{request_id}/replace",
+    response_model=KycDocumentResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Replace a rejected or needs-clarification document",
+    description=(
+        "Atomically replaces the document on a request that was rejected or needs clarification. "
+        "Uploads the new file to the same submission, soft-deletes the old one, "
+        "and re-links the request. Works even after the submission has been submitted."
+    ),
+)
+async def replace_document(
+    request_id: UUID,
+    file: UploadFile,
+    db: DbConn,
+    current_user: BuyerUser,
+):
+    buyer_id = UUID(str(current_user["id"]))
+    return await replace_document_for_request(db, request_id, file, buyer_id)
 
 
 @router.get(

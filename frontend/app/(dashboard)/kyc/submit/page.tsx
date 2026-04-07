@@ -19,11 +19,13 @@ import {
   FileQuestion,
   XCircle,
 } from "lucide-react"
+
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import {
   kyc as kycApi,
+  kycBuyer,
   type KycDocument,
   type DocumentRequestResponse,
   ApiRequestError,
@@ -37,18 +39,28 @@ interface RequestSlotProps {
   verificationStatus?: "verified" | "rejected" | "needs_clarification" | null
   onUpload: (requestId: string, file: File) => Promise<void>
   onDelete: (docId: string, requestId: string) => Promise<void>
+  onReplace: (requestId: string, file: File) => Promise<void>
   uploading: boolean
   deleting: boolean
+  replacing: boolean
 }
 
-function RequestSlot({ request, uploaded, verificationStatus, onUpload, onDelete, uploading, deleting }: RequestSlotProps) {
+function RequestSlot({ request, uploaded, verificationStatus, onUpload, onDelete, onReplace, uploading, deleting, replacing }: RequestSlotProps) {
   const fileRef = useRef<HTMLInputElement>(null)
+  const replaceRef = useRef<HTMLInputElement>(null)
 
   const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     await onUpload(request.id, file)
     if (fileRef.current) fileRef.current.value = ""
+  }
+
+  const handleReplaceChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    await onReplace(request.id, file)
+    if (replaceRef.current) replaceRef.current.value = ""
   }
 
   const isUploaded = request.status === "uploaded" || !!uploaded
@@ -130,25 +142,48 @@ function RequestSlot({ request, uploaded, verificationStatus, onUpload, onDelete
               </p>
             </div>
             {isVerified ? (
-              /* Verified — locked, cannot delete */
+              /* Verified — locked, cannot replace */
               <div className="flex items-center gap-1.5 text-success shrink-0">
                 <CheckCircle2 className="w-4 h-4" />
                 <Lock className="w-3.5 h-3.5 opacity-60" title="Verified documents cannot be removed" />
               </div>
-            ) : (
-              /* Not yet verified — allow delete/re-upload */
+            ) : (isRejected || needsInfo) ? (
+              /* Rejected / needs-info — single "Replace" button via new endpoint */
               <>
                 {isRejected
                   ? <XCircle className="w-5 h-5 text-danger shrink-0" />
-                  : needsInfo
-                  ? <AlertCircle className="w-5 h-5 text-warning shrink-0" />
-                  : <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
+                  : <AlertCircle className="w-5 h-5 text-warning shrink-0" />
                 }
+                <input
+                  ref={replaceRef}
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  className="hidden"
+                  onChange={handleReplaceChange}
+                />
+                <button
+                  onClick={() => replaceRef.current?.click()}
+                  disabled={replacing}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-50",
+                    isRejected
+                      ? "bg-danger/10 text-danger border-danger/20 hover:bg-danger/20"
+                      : "bg-warning/10 text-warning border-warning/20 hover:bg-warning/20"
+                  )}
+                >
+                  {replacing ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" /> : <RefreshCw className="w-3.5 h-3.5 inline mr-1" />}
+                  {replacing ? "Uploading…" : "Replace"}
+                </button>
+              </>
+            ) : (
+              /* Normal upload (no verdict yet) — allow delete */
+              <>
+                <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
                 <button
                   onClick={() => onDelete(uploaded.id, request.id)}
                   disabled={deleting}
                   className="p-1 rounded-md text-text-secondary hover:text-danger hover:bg-danger/5 transition-colors disabled:opacity-50"
-                  title={isRejected || needsInfo ? "Remove file and re-upload" : "Remove file"}
+                  title="Remove file"
                 >
                   {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
                 </button>
@@ -204,10 +239,11 @@ export default function KYCSubmitPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
 
-  // uploadingId = request.id, deletingId = doc.id
-  const [uploadingId, setUploadingId] = useState<string | null>(null)
-  const [deletingId, setDeletingId]   = useState<string | null>(null)
-  const [uploadError, setUploadError] = useState<string | null>(null)
+  // uploadingId = request.id, deletingId = doc.id, replacingId = request.id
+  const [uploadingId, setUploadingId]   = useState<string | null>(null)
+  const [deletingId, setDeletingId]     = useState<string | null>(null)
+  const [replacingId, setReplacingId]   = useState<string | null>(null)
+  const [uploadError, setUploadError]   = useState<string | null>(null)
 
   const [submitting, setSubmitting]     = useState(false)
   const [submitSuccess, setSubmitSuccess] = useState(false)
@@ -255,6 +291,31 @@ export default function KYCSubmitPage() {
       setUploadError(e instanceof ApiRequestError ? e.message : "Upload failed.")
     } finally {
       setUploadingId(null)
+    }
+  }
+
+  const handleReplace = async (requestId: string, file: File) => {
+    setReplacingId(requestId)
+    setUploadError(null)
+    try {
+      const newDoc = await kycBuyer.replaceDocumentForRequest(requestId, file)
+      setMyDocs((prev) => {
+        const req = requests.find((r) => r.id === requestId)
+        const oldDocId = req?.fulfilled_doc_id
+        return [...prev.filter((d) => d.id !== oldDocId), newDoc]
+      })
+      setRequests((prev) => prev.map((r) =>
+        r.id === requestId ? { ...r, status: "uploaded" as const, fulfilled_doc_id: newDoc.id } : r
+      ))
+      setStatusDocs((prev) => {
+        const req = requests.find((r) => r.id === requestId)
+        const oldDocId = req?.fulfilled_doc_id
+        return [...prev.filter((d) => d.id !== oldDocId), newDoc]
+      })
+    } catch (e) {
+      setUploadError(e instanceof ApiRequestError ? e.message : "Replace failed.")
+    } finally {
+      setReplacingId(null)
     }
   }
 
@@ -426,8 +487,10 @@ export default function KYCSubmitPage() {
               verificationStatus={verificationStatus}
               onUpload={handleUpload}
               onDelete={handleDelete}
+              onReplace={handleReplace}
               uploading={uploadingId === req.id}
               deleting={deletingId === (fulfilledDoc?.id ?? "")}
+              replacing={replacingId === req.id}
             />
           )
         })}

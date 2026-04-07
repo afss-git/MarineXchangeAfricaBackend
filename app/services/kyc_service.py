@@ -1522,6 +1522,153 @@ async def fulfill_document_request(
     return dict(row)
 
 
+async def replace_document_for_request(
+    db: asyncpg.Connection,
+    request_id: uuid.UUID,
+    file: "UploadFile",
+    buyer_id: uuid.UUID,
+) -> dict:
+    """
+    Atomically replace a rejected/needs-clarification document on a request.
+    - Uploads the new file to the SAME submission (no draft required)
+    - Soft-deletes the old doc
+    - Updates fulfilled_doc_id on the request
+    Works regardless of submission status, as long as the existing doc verification
+    is 'rejected' or 'needs_clarification'.
+    """
+    import hashlib, mimetypes as _mimetypes
+
+    # 1. Load the request
+    req = await db.fetchrow(
+        "SELECT * FROM kyc.document_requests WHERE id = $1",
+        request_id,
+    )
+    if not req:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document request not found.")
+    if str(req["buyer_id"]) != str(buyer_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+
+    submission_id = req["submission_id"]
+    old_doc_id = req["fulfilled_doc_id"]
+
+    # 2. Check the old doc's verification status (if there is one)
+    if old_doc_id:
+        verif = await db.fetchrow(
+            """
+            SELECT status FROM kyc.document_verifications
+            WHERE document_id = $1
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            old_doc_id,
+        )
+        if verif and verif["status"] == "verified":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot replace a verified document.",
+            )
+
+    # 3. MIME + size validation (same rules as upload)
+    mime_type = file.content_type or ""
+    if mime_type not in ALLOWED_MIME_TYPES and file.filename:
+        guessed, _ = _mimetypes.guess_type(file.filename)
+        mime_type = guessed or mime_type
+    if mime_type not in ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"Unsupported file type '{mime_type}'. Allowed: JPEG, PNG, WebP, PDF.",
+        )
+
+    file_bytes = await file.read()
+    max_bytes = MAX_DOC_SIZE_MB * 1024 * 1024
+    if len(file_bytes) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File exceeds maximum size of {MAX_DOC_SIZE_MB} MB.",
+        )
+
+    from app.core.file_validation import validate_magic_bytes
+    if not validate_magic_bytes(file_bytes, mime_type):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="File content does not match the declared file type.",
+        )
+
+    file_hash = hashlib.sha256(file_bytes).hexdigest()
+
+    # 4. Upload new file to storage under the SAME submission path
+    new_doc_id = uuid.uuid4()
+    ext = MIME_TO_EXT[mime_type]
+    storage_path = f"{buyer_id}/{submission_id}/{new_doc_id}.{ext}"
+
+    try:
+        supabase = await get_supabase_admin_client()
+        await supabase.storage.from_(KYC_BUCKET).upload(
+            storage_path,
+            file_bytes,
+            {"content_type": mime_type},
+        )
+    except Exception as exc:
+        logger.error("KYC replace-upload to storage failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Document upload failed. Please try again.",
+        )
+
+    # 5. Insert new document row (inherits document_type_id from old doc if available)
+    old_type_id = None
+    if old_doc_id:
+        old_row = await db.fetchrow(
+            "SELECT document_type_id FROM kyc.documents WHERE id = $1",
+            old_doc_id,
+        )
+        if old_row:
+            old_type_id = old_row["document_type_id"]
+
+    new_row = await db.fetchrow(
+        """
+        INSERT INTO kyc.documents
+            (id, submission_id, buyer_id, document_type_id, storage_path,
+             original_name, file_size_bytes, mime_type, file_hash)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING *
+        """,
+        new_doc_id, submission_id, buyer_id, old_type_id,
+        storage_path, file.filename, len(file_bytes), mime_type, file_hash,
+    )
+
+    # 6. Atomically: soft-delete old doc + update request
+    async with db.transaction():
+        if old_doc_id:
+            await db.execute(
+                "UPDATE kyc.documents SET deleted_at = NOW() WHERE id = $1",
+                old_doc_id,
+            )
+        await db.execute(
+            """
+            UPDATE kyc.document_requests
+            SET fulfilled_doc_id = $2, status = 'uploaded', updated_at = NOW()
+            WHERE id = $1
+            """,
+            request_id, new_doc_id,
+        )
+
+    await write_audit_log(
+        db,
+        actor_id=buyer_id,
+        actor_roles=["buyer"],
+        action=AuditAction.KYC_DOCUMENT_UPLOADED,
+        resource_type="kyc_document",
+        resource_id=str(new_doc_id),
+        new_state={
+            "replaced_doc_id": str(old_doc_id) if old_doc_id else None,
+            "request_id": str(request_id),
+            "file_hash": file_hash,
+        },
+    )
+
+    return await _enrich_document(db, new_row)
+
+
 async def waive_document_request(
     db: asyncpg.Connection,
     request_id: uuid.UUID,

@@ -2748,6 +2748,12 @@ export const kycBuyer = {
     request<DocumentRequestResponse>(`/kyc/me/document-requests/${requestId}/fulfill`, {
       method: "POST", body: JSON.stringify({ document_id: documentId }),
     }),
+
+  replaceDocumentForRequest: (requestId: string, file: File) => {
+    const fd = new FormData()
+    fd.append("file", file)
+    return upload<KycDocument>(`/kyc/me/document-requests/${requestId}/replace`, fd)
+  },
 }
 
 // ── Purchase Requests Admin types ─────────────────────────────────────────────
