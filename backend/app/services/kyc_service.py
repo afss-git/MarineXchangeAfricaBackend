@@ -152,14 +152,14 @@ async def _get_full_submission(
     # Latest verification per document
     ver_rows = await db.fetch(
         """
-        SELECT DISTINCT ON (document_id)
-            document_id, status, rejection_reason, notes, extracted_data,
-            checklist_results, verified_by, created_at,
-            p.full_name AS verified_by_name
+        SELECT DISTINCT ON (dv.document_id)
+            dv.document_id, dv.status, dv.rejection_reason, dv.notes,
+            dv.extracted_data, dv.checklist_results, dv.verified_by,
+            dv.created_at, p.full_name AS verified_by_name
         FROM kyc.document_verifications dv
         LEFT JOIN public.profiles p ON p.id = dv.verified_by
         WHERE dv.submission_id = $1
-        ORDER BY document_id, dv.created_at DESC
+        ORDER BY dv.document_id, dv.created_at DESC
         """,
         submission_id,
     )
@@ -362,13 +362,13 @@ async def get_kyc_status(db: asyncpg.Connection, buyer_id: uuid.UUID) -> dict:
         )
         ver_rows = await db.fetch(
             """
-            SELECT DISTINCT ON (document_id)
-                document_id, status, rejection_reason, notes, created_at,
-                p.full_name AS verified_by_name
+            SELECT DISTINCT ON (dv.document_id)
+                dv.document_id, dv.status, dv.rejection_reason, dv.notes,
+                dv.created_at, p.full_name AS verified_by_name
             FROM kyc.document_verifications dv
             LEFT JOIN public.profiles p ON p.id = dv.verified_by
             WHERE dv.submission_id = $1
-            ORDER BY document_id, dv.created_at DESC
+            ORDER BY dv.document_id, dv.created_at DESC
             """,
             sub_id,
         )
