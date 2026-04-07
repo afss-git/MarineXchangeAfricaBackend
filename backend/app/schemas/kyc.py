@@ -102,9 +102,9 @@ class KycDocumentResponse(BaseModel):
     """A single uploaded KYC document."""
     id:                 UUID
     submission_id:      UUID
-    document_type_id:   UUID
-    document_type_name: str
-    document_type_slug: str
+    document_type_id:   UUID | None
+    document_type_name: str | None
+    document_type_slug: str | None
     storage_path:       str
     signed_url:         str     # pre-signed, short expiry
     original_name:      str | None
