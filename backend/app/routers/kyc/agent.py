@@ -20,9 +20,12 @@ GET    /kyc/agent/documents/{id}/view                  -- get signed URL with ac
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import Response as FastAPIResponse
 from pydantic import BaseModel, Field
 from typing import Optional
 
@@ -384,6 +387,79 @@ async def view_document(
 ):
     ip = getattr(request.state, "client_ip", None)
     return await get_signed_url_with_logging(db, document_id, current_user, ip_address=ip)
+
+
+@router.get(
+    "/agent/documents/{document_id}/stream",
+    summary="Stream document inline with watermark for agents",
+    description=(
+        "Downloads the document from storage and streams it inline. "
+        "Agents receive a watermarked copy (tiled name + timestamp). "
+        "Admins receive the original. Content-Disposition is always inline — no download."
+    ),
+)
+async def stream_document(
+    document_id: UUID,
+    db: DbConn,
+    current_user: KycAgentOrAdmin,
+):
+    from app.services.kyc_service import _get_signed_url
+    from app.services.watermark_service import watermark_image, watermark_pdf
+
+    doc = await db.fetchrow(
+        "SELECT * FROM kyc.documents WHERE id = $1 AND deleted_at IS NULL",
+        document_id,
+    )
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+
+    actor_id = UUID(str(current_user["id"]))
+    roles = current_user.get("roles", [])
+    is_admin = "admin" in roles
+
+    if not is_admin:
+        asgn = await db.fetchrow(
+            "SELECT id FROM kyc.assignments WHERE submission_id = $1 AND agent_id = $2",
+            doc["submission_id"], actor_id,
+        )
+        if not asgn:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not assigned to this submission.")
+
+    # Download file from Supabase via signed URL
+    signed_url = await _get_signed_url(doc["storage_path"])
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.get(signed_url, follow_redirects=True)
+        resp.raise_for_status()
+        file_bytes = resp.content
+
+    mime_type = doc["mime_type"] or "application/octet-stream"
+    filename = (doc["original_name"] or "document").replace('"', "")
+
+    headers = {
+        "Content-Disposition": f'inline; filename="{filename}"',
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "X-Content-Type-Options": "nosniff",
+    }
+
+    if is_admin:
+        return FastAPIResponse(content=file_bytes, media_type=mime_type, headers=headers)
+
+    # Build watermark text with agent's name + timestamp
+    agent_row = await db.fetchrow(
+        "SELECT full_name FROM public.profiles WHERE id = $1", actor_id
+    )
+    agent_name = (agent_row["full_name"] if agent_row else None) or "Verification Agent"
+    ts = datetime.now(timezone.utc).strftime("%d %b %Y %H:%M UTC")
+    wm_text = f"CONFIDENTIAL  •  {agent_name}  •  {ts}"
+
+    if mime_type.startswith("image/"):
+        body = watermark_image(file_bytes, wm_text, mime_type)
+    elif mime_type == "application/pdf":
+        body = watermark_pdf(file_bytes, wm_text)
+    else:
+        body = file_bytes
+
+    return FastAPIResponse(content=body, media_type=mime_type, headers=headers)
 
 
 @router.get(
