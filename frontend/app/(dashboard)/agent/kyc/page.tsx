@@ -1,12 +1,12 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import {
   ShieldCheck, Clock, Eye, CheckCircle2, XCircle, RefreshCw,
   ChevronDown, ChevronUp, AlertCircle, Loader2, FileText, User,
   Flag, AlertTriangle, Phone, PhoneCall, FileQuestion,
-  ClipboardCheck, Send, X as XIcon,
+  ClipboardCheck, Send, X as XIcon, Lock,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -21,6 +21,128 @@ import {
   DocumentRequestResponse, DocumentTypeResponse,
 } from "@/lib/api"
 import { useAgentKycQueue } from "@/lib/hooks"
+
+// ── Document Viewer Modal ──────────────────────────────────────────────────────
+
+function DocViewer({ documentId, label, onClose }: {
+  documentId: string
+  label: string
+  onClose: () => void
+}) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [mimeType, setMimeType] = useState<string>("")
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState<string | null>(null)
+  const urlRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true); setErr(null)
+    kycAgent.streamDocument(documentId)
+      .then(({ blob, mimeType: mt }) => {
+        if (cancelled) return
+        const url = URL.createObjectURL(blob)
+        urlRef.current = url
+        setBlobUrl(url)
+        setMimeType(mt)
+      })
+      .catch((e) => { if (!cancelled) setErr(e?.message ?? "Failed to load document.") })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => {
+      cancelled = true
+      if (urlRef.current) { URL.revokeObjectURL(urlRef.current); urlRef.current = null }
+    }
+  }, [documentId])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border bg-gray-50 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <FileText className="w-4 h-4 text-ocean shrink-0" />
+            <span className="text-sm font-medium text-text-primary truncate">{label}</span>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <span className="text-xs text-text-secondary bg-warning/10 border border-warning/20 text-warning px-2 py-0.5 rounded-full font-medium">
+              Watermarked Preview
+            </span>
+            <button onClick={onClose} className="text-text-secondary hover:text-text-primary">
+              <XIcon className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div
+          className="flex-1 overflow-auto bg-gray-100 select-none"
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {loading && (
+            <div className="h-64 flex items-center justify-center gap-2 text-text-secondary">
+              <Loader2 className="w-5 h-5 animate-spin" /> Loading document…
+            </div>
+          )}
+          {err && (
+            <div className="h-64 flex items-center justify-center gap-2 text-danger text-sm">
+              <AlertCircle className="w-4 h-4" /> {err}
+            </div>
+          )}
+          {blobUrl && !loading && (
+            mimeType.startsWith("image/") ? (
+              <img
+                src={blobUrl}
+                alt={label}
+                className="max-w-full mx-auto block p-4"
+                draggable={false}
+                onContextMenu={(e) => e.preventDefault()}
+              />
+            ) : (
+              <iframe
+                src={blobUrl}
+                title={label}
+                className="w-full h-[70vh] border-0"
+              />
+            )
+          )}
+        </div>
+
+        {/* Footer note */}
+        <div className="px-5 py-2 border-t border-border bg-gray-50 shrink-0">
+          <p className="text-xs text-text-secondary text-center">
+            This document is for verification purposes only. Downloading or sharing is prohibited.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── View-only doc button (no download, opens watermarked modal) ───────────────
+
+function ViewDocButton({ doc }: { doc: KycDocumentResponse }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1 text-xs text-ocean hover:underline"
+      >
+        <Eye className="w-3.5 h-3.5" /> View
+      </button>
+      {open && (
+        <DocViewer
+          documentId={doc.id}
+          label={doc.document_type_name ?? doc.original_name ?? "Document"}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  )
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -79,20 +201,25 @@ const VERIFY_STATUS_COLORS: Record<string, string> = {
 
 // ── Document Verification Panel ───────────────────────────────────────────────
 
-function DocVerifyPanel({ doc, submissionId, onDone }: {
+function DocVerifyPanel({ doc, submissionId, existingVerification, onDone }: {
   doc: KycDocumentResponse
   submissionId: string
+  existingVerification?: DocumentVerificationResponse | null
   onDone: () => void
 }) {
   const [template, setTemplate] = useState<ChecklistTemplateItem[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [checks, setChecks] = useState<Record<string, { passed: boolean; value?: string }>>({})
   const [extracted, setExtracted] = useState<Record<string, string>>({})
-  const [verdict, setVerdict] = useState<"verified" | "rejected" | "needs_clarification">("verified")
-  const [rejectionReason, setRejectionReason] = useState("")
-  const [notes, setNotes] = useState("")
+  const [verdict, setVerdict] = useState<"verified" | "rejected" | "needs_clarification">(
+    existingVerification?.status ?? "verified"
+  )
+  const [rejectionReason, setRejectionReason] = useState(existingVerification?.rejection_reason ?? "")
+  const [notes, setNotes] = useState(existingVerification?.notes ?? "")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [viewing, setViewing] = useState(false)
+  const isEditing = !!existingVerification
 
   useEffect(() => {
     kycAgent.getChecklistTemplate(doc.id)
@@ -100,12 +227,21 @@ function DocVerifyPanel({ doc, submissionId, onDone }: {
         setTemplate(r.checklist_template)
         if (r.checklist_template) {
           const init: typeof checks = {}
-          r.checklist_template.forEach((item) => { init[item.key] = { passed: false } })
+          r.checklist_template.forEach((item) => {
+            // Pre-fill checklist from existing verification if editing
+            const existing = existingVerification?.checklist_results?.find((c) => c.key === item.key)
+            init[item.key] = { passed: existing?.passed ?? false }
+          })
           setChecks(init)
+        }
+        // Pre-fill extracted data
+        if (existingVerification?.extracted_data) {
+          setExtracted(existingVerification.extracted_data)
         }
       })
       .catch(() => setTemplate(null))
       .finally(() => setLoading(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.id])
 
   async function handleSubmit() {
@@ -142,14 +278,20 @@ function DocVerifyPanel({ doc, submissionId, onDone }: {
 
   return (
     <div className="p-4 bg-gray-50/50 space-y-4">
-      {/* Document view link */}
+      {/* Document view button */}
       <div className="flex items-center justify-between">
-        <p className="text-sm font-medium">{doc.document_type_name}: {doc.original_name}</p>
-        <a href={doc.signed_url} target="_blank" rel="noopener noreferrer"
-           className="text-xs text-ocean hover:underline flex items-center gap-1">
-          <Eye className="w-3.5 h-3.5" /> Open Document
-        </a>
+        <p className="text-sm font-medium">{doc.document_type_name ?? doc.original_name}: {doc.original_name}</p>
+        <Button size="sm" variant="outline" onClick={() => setViewing(true)} className="text-xs gap-1 h-7">
+          <Eye className="w-3.5 h-3.5" /> View Document
+        </Button>
       </div>
+      {viewing && (
+        <DocViewer
+          documentId={doc.id}
+          label={doc.document_type_name ?? doc.original_name ?? "Document"}
+          onClose={() => setViewing(false)}
+        />
+      )}
 
       {/* Checklist */}
       {template && template.length > 0 && (
@@ -246,7 +388,7 @@ function DocVerifyPanel({ doc, submissionId, onDone }: {
       <div className="flex justify-end">
         <Button size="sm" onClick={handleSubmit} disabled={submitting} className="bg-ocean hover:bg-ocean-dark text-white gap-1.5">
           {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ClipboardCheck className="w-3.5 h-3.5" />}
-          {submitting ? "Submitting..." : "Submit Verification"}
+          {submitting ? "Saving..." : isEditing ? "Update Verdict" : "Submit Verification"}
         </Button>
       </div>
     </div>
@@ -690,33 +832,46 @@ function SubmissionPanel({ sub, onReviewed }: {
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           {verification ? (
-                            <Badge className={cn("text-xs border capitalize", VERIFY_STATUS_COLORS[verification.status] ?? "")}>
-                              <CheckCircle2 className="w-3 h-3 mr-1" />
-                              {verification.status === "needs_clarification" ? "Needs Info" : verification.status}
-                            </Badge>
+                            <>
+                              <Badge className={cn("text-xs border capitalize", VERIFY_STATUS_COLORS[verification.status] ?? "")}>
+                                <CheckCircle2 className="w-3 h-3 mr-1" />
+                                {verification.status === "needs_clarification" ? "Needs Info" : verification.status}
+                              </Badge>
+                              {detail.locked_at ? (
+                                <Lock className="w-3.5 h-3.5 text-text-secondary" title="Admin has locked this submission — verdicts cannot be changed" />
+                              ) : (
+                                <Button
+                                  size="sm" variant="outline"
+                                  onClick={() => setVerifyingDocId(isVerifying ? null : doc.id)}
+                                  className="text-xs gap-1"
+                                >
+                                  <ClipboardCheck className="w-3.5 h-3.5" />
+                                  {isVerifying ? "Cancel" : "Edit"}
+                                </Button>
+                              )}
+                            </>
                           ) : (
                             <Button
                               size="sm" variant="outline"
                               onClick={() => setVerifyingDocId(isVerifying ? null : doc.id)}
                               className="text-xs gap-1"
+                              disabled={!!detail.locked_at}
+                              title={detail.locked_at ? "Admin has locked this submission" : undefined}
                             >
                               <ClipboardCheck className="w-3.5 h-3.5" />
                               {isVerifying ? "Cancel" : "Verify"}
                             </Button>
                           )}
-                          <a href={doc.signed_url} target="_blank" rel="noopener noreferrer"
-                             className="flex items-center gap-1 text-xs text-ocean hover:underline">
-                            <Eye className="w-3.5 h-3.5" /> View
-                          </a>
+                          <ViewDocButton doc={doc} />
                         </div>
                       </div>
                       {isVerifying && (
                         <DocVerifyPanel
                           doc={doc}
                           submissionId={sub.id}
+                          existingVerification={verification ?? null}
                           onDone={() => {
                             setVerifyingDocId(null)
-                            // Reload verifications
                             kycAgent.getVerifications(sub.id).then(setVerifications).catch(() => {})
                           }}
                         />

@@ -20,6 +20,7 @@ import {
   Upload,
   FileText,
   Lock,
+  RefreshCw,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -28,6 +29,7 @@ import { cn } from "@/lib/utils"
 import {
   kycBuyer,
   type DocumentRequestResponse,
+  type DocVerificationBrief,
 } from "@/lib/api"
 import { useKycStatus } from "@/lib/hooks"
 
@@ -260,7 +262,6 @@ function DocumentRequestsStep({ phoneVerified }: { phoneVerified: boolean }) {
 
   const pending = requests.filter((r) => r.status === "pending")
   const fulfilled = requests.filter((r) => r.status === "uploaded")
-  const waived = requests.filter((r) => r.status === "waived")
 
   if (requests.length === 0) {
     return (
@@ -439,11 +440,18 @@ function ReviewStatusStep({ kycStatus, rejectionReason, expiresAt }: {
 
 interface KycDocBrief {
   id: string
-  document_type_name: string
-  document_type_slug: string
+  document_type_name: string | null
+  document_type_slug: string | null
   original_name: string | null
   uploaded_at: string
+  verification?: DocVerificationBrief | null
 }
+
+const VERIF_CFG = {
+  verified:             { label: "Verified",       cls: "bg-success/10 text-success border-success/20",  Icon: CheckCircle2 },
+  rejected:             { label: "Rejected",        cls: "bg-danger/10 text-danger border-danger/20",    Icon: XCircle },
+  needs_clarification:  { label: "Needs Info",      cls: "bg-warning/10 text-warning border-warning/20", Icon: AlertCircle },
+} as const
 
 function UploadedDocumentsTable({ documents }: { documents: KycDocBrief[] }) {
   if (!documents || documents.length === 0) return null
@@ -454,20 +462,67 @@ function UploadedDocumentsTable({ documents }: { documents: KycDocBrief[] }) {
         <h2 className="text-sm font-semibold text-text-primary">Your Submitted Documents</h2>
       </div>
       <div className="divide-y divide-border">
-        {documents.map((doc) => (
-          <div key={doc.id} className="flex items-center gap-3 px-5 py-3">
-            <FileText className="w-4 h-4 text-ocean shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-text-primary truncate">
-                {doc.original_name ?? doc.document_type_name}
-              </p>
-              <p className="text-xs text-text-secondary">{doc.document_type_name}</p>
+        {documents.map((doc) => {
+          const v = doc.verification
+          const cfg = v ? VERIF_CFG[v.status as keyof typeof VERIF_CFG] : null
+          return (
+            <div key={doc.id} className="px-5 py-3">
+              <div className="flex items-center gap-3">
+                {cfg ? (
+                  <cfg.Icon className={cn("w-4 h-4 shrink-0",
+                    v!.status === "verified" ? "text-success" :
+                    v!.status === "rejected" ? "text-danger" : "text-warning"
+                  )} />
+                ) : (
+                  <FileText className="w-4 h-4 text-ocean shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-medium text-text-primary truncate">
+                      {doc.original_name ?? doc.document_type_name}
+                    </p>
+                    {cfg && (
+                      <Badge className={cn("text-xs border shrink-0", cfg.cls)}>
+                        {cfg.label}
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-text-secondary">
+                    {doc.document_type_name} · {new Date(doc.uploaded_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                  </p>
+                </div>
+              </div>
+              {v?.status === "rejected" && (
+                <div className="mt-1.5 ml-7 space-y-1">
+                  {v.rejection_reason && (
+                    <p className="text-xs text-danger bg-danger/5 border border-danger/10 rounded px-2 py-1">
+                      {v.rejection_reason}
+                    </p>
+                  )}
+                  <Link href="/kyc/submit">
+                    <button className="flex items-center gap-1 text-xs text-danger hover:underline font-medium">
+                      <RefreshCw className="w-3 h-3" /> Re-upload document
+                    </button>
+                  </Link>
+                </div>
+              )}
+              {v?.status === "needs_clarification" && (
+                <div className="mt-1.5 ml-7 space-y-1">
+                  {v.notes && (
+                    <p className="text-xs text-warning bg-warning/5 border border-warning/10 rounded px-2 py-1">
+                      {v.notes}
+                    </p>
+                  )}
+                  <Link href="/kyc/submit">
+                    <button className="flex items-center gap-1 text-xs text-warning hover:underline font-medium">
+                      <RefreshCw className="w-3 h-3" /> Replace with clearer version
+                    </button>
+                  </Link>
+                </div>
+              )}
             </div>
-            <span className="text-xs text-text-secondary shrink-0">
-              {new Date(doc.uploaded_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
-            </span>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
@@ -535,7 +590,6 @@ export default function KYCPage() {
     )
   }
 
-  const hasDocRequests = false // Will be determined by DocumentRequestsStep internally
   const docsUploaded = (kycData?.uploaded_document_count ?? 0) > 0
 
   return (

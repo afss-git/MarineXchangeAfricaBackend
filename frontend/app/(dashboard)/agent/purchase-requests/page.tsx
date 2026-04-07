@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import {
   ClipboardList, Clock, CheckCircle2, XCircle, RefreshCw,
   ChevronDown, ChevronUp, AlertCircle, Loader2, DollarSign,
-  Package, User, FileText,
+  Package, User, FileText, FileQuestion, Send, Shield,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -14,7 +14,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import {
-  prAgent, AgentAssignedPRItem, AgentAssignedPRDetail,
+  prAgent, kycAgent, AgentAssignedPRItem, AgentAssignedPRDetail,
+  DocumentRequestResponse, DocumentTypeResponse,
 } from "@/lib/api"
 import { useAgentPurchaseRequests } from "@/lib/hooks"
 
@@ -64,6 +65,208 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge className={cn("text-xs border capitalize", cfg.className)}>{cfg.label}</Badge>
 }
 
+// ── Document Requests Panel ───────────────────────────────────────────────────
+
+interface DraftItem {
+  id: string           // local key only
+  name: string         // free-text document name
+  reason: string
+  priority: "required" | "recommended"
+}
+
+function DocRequestsPanel({ buyerId }: { buyerId: string }) {
+  const [submissionId, setSubmissionId] = useState<string | null>(null)
+  const [sent, setSent]                 = useState<DocumentRequestResponse[]>([])
+  const [loading, setLoading]           = useState(true)
+  const [error, setError]               = useState<string | null>(null)
+  const [sending, setSending]           = useState(false)
+
+  // Draft list — each row is one document the agent wants to request
+  const [drafts, setDrafts] = useState<DraftItem[]>([
+    { id: crypto.randomUUID(), name: "", reason: "", priority: "required" },
+  ])
+
+  useEffect(() => {
+    async function init() {
+      try {
+        const sub  = await kycAgent.ensureBuyerSubmission(buyerId)
+        setSubmissionId(sub.submission_id)
+        const reqs = await kycAgent.listDocumentRequests(sub.submission_id)
+        setSent(reqs)
+      } catch (e: unknown) {
+        setError((e as Error)?.message ?? "Failed to load")
+      } finally {
+        setLoading(false)
+      }
+    }
+    init()
+  }, [buyerId])
+
+  function addRow() {
+    setDrafts((prev) => [...prev, { id: crypto.randomUUID(), name: "", reason: "", priority: "required" }])
+  }
+
+  function removeRow(id: string) {
+    setDrafts((prev) => prev.filter((d) => d.id !== id))
+  }
+
+  function updateRow(id: string, field: keyof DraftItem, value: string) {
+    setDrafts((prev) => prev.map((d) => d.id === id ? { ...d, [field]: value } : d))
+  }
+
+  async function handleSendAll() {
+    const valid = drafts.filter((d) => d.name.trim())
+    if (!submissionId || valid.length === 0) {
+      setError("Add at least one document name before sending.")
+      return
+    }
+    setSending(true)
+    setError(null)
+    try {
+      const result = await kycAgent.requestDocuments(submissionId,
+        valid.map((d) => ({
+          custom_document_name: d.name.trim(),
+          reason: d.reason.trim() || undefined,
+          priority: d.priority,
+        }))
+      )
+      setSent((prev) => [...prev, ...result])
+      // Reset to one blank row
+      setDrafts([{ id: crypto.randomUUID(), name: "", reason: "", priority: "required" }])
+    } catch (e: unknown) {
+      setError((e as Error)?.message ?? "Failed to send requests")
+    } finally {
+      setSending(false)
+    }
+  }
+
+  async function handleWaive(reqId: string) {
+    const waiveReason = prompt("Reason for waiving this request:")
+    if (!waiveReason) return
+    try {
+      const updated = await kycAgent.waiveDocumentRequest(reqId, waiveReason)
+      setSent((prev) => prev.map((r) => r.id === reqId ? updated : r))
+    } catch { /* silent */ }
+  }
+
+  const STATUS_COLORS: Record<string, string> = {
+    pending:  "bg-warning/10 text-warning border-warning/20",
+    uploaded: "bg-success/10 text-success border-success/20",
+    waived:   "bg-gray-100 text-gray-500 border-gray-200",
+  }
+
+  if (loading) return (
+    <div className="flex items-center gap-2 py-6 px-5 text-sm text-text-secondary">
+      <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+    </div>
+  )
+
+  return (
+    <div className="p-5 space-y-5">
+
+      {/* Already-sent requests */}
+      {sent.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-2">
+            Sent Requests ({sent.length})
+          </p>
+          <div className="divide-y divide-border rounded-lg border border-border overflow-hidden">
+            {sent.map((req) => (
+              <div key={req.id} className="flex items-center gap-3 px-4 py-3 bg-white">
+                <FileQuestion className="w-4 h-4 text-text-secondary shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">{req.document_type_name}</p>
+                  {req.reason && <p className="text-xs text-text-secondary">{req.reason}</p>}
+                </div>
+                <Badge className={cn("text-xs border capitalize", STATUS_COLORS[req.status] ?? "")}>{req.status}</Badge>
+                <Badge variant="secondary" className="text-xs capitalize">{req.priority}</Badge>
+                {req.status === "pending" && (
+                  <button onClick={() => handleWaive(req.id)} className="text-xs text-text-secondary hover:text-danger transition-colors">
+                    Waive
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Draft builder */}
+      <div className="border border-border rounded-xl overflow-hidden">
+        <div className="px-4 py-3 bg-ocean/5 border-b border-border flex items-center justify-between">
+          <p className="text-sm font-semibold text-text-primary">Request Documents from Buyer</p>
+          <button
+            onClick={addRow}
+            className="flex items-center gap-1.5 text-xs text-ocean hover:text-ocean-dark font-medium transition-colors"
+          >
+            <Send className="w-3.5 h-3.5 rotate-90" /> Add another
+          </button>
+        </div>
+
+        <div className="divide-y divide-border">
+          {drafts.map((draft, i) => (
+            <div key={draft.id} className="p-4 space-y-2 bg-white">
+              <div className="flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-ocean/10 text-ocean text-xs font-semibold flex items-center justify-center shrink-0">
+                  {i + 1}
+                </span>
+                <Input
+                  placeholder="Document name (e.g. Passport, Business Registration, Proof of Address…)"
+                  value={draft.name}
+                  onChange={(e) => updateRow(draft.id, "name", e.target.value)}
+                  className="text-sm flex-1"
+                />
+                {drafts.length > 1 && (
+                  <button
+                    onClick={() => removeRow(draft.id)}
+                    className="p-1 text-text-secondary hover:text-danger transition-colors"
+                  >
+                    <XCircle className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              <Input
+                placeholder="Reason — why is this document needed? (optional)"
+                value={draft.reason}
+                onChange={(e) => updateRow(draft.id, "reason", e.target.value)}
+                className="text-sm text-text-secondary"
+              />
+              <div className="flex gap-2">
+                {(["required", "recommended"] as const).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => updateRow(draft.id, "priority", p)}
+                    className={cn(
+                      "px-3 py-1 rounded-lg border text-xs font-medium capitalize transition-colors",
+                      draft.priority === p
+                        ? p === "required" ? "bg-danger/10 text-danger border-danger/30" : "bg-warning/10 text-warning border-warning/30"
+                        : "bg-white text-text-secondary border-border"
+                    )}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="px-4 py-3 bg-gray-50 border-t border-border">
+          {error && <div className="mb-3"><ErrorBar msg={error} /></div>}
+          <Button
+            onClick={handleSendAll}
+            disabled={sending || !submissionId || drafts.every((d) => !d.name.trim())}
+            className="bg-ocean hover:bg-ocean-dark text-white gap-1.5 w-full sm:w-auto"
+          >
+            {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            {sending ? "Sending…" : `Send ${drafts.filter(d => d.name.trim()).length || ""} Request${drafts.filter(d => d.name.trim()).length !== 1 ? "s" : ""} to Buyer`}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Expanded PR detail + report form ──────────────────────────────────────────
 
 function PRPanel({ item, onReported }: {
@@ -73,6 +276,7 @@ function PRPanel({ item, onReported }: {
   const [detail, setDetail]   = useState<AgentAssignedPRDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<"documents" | "report">("documents")
 
   // Report form
   const [financialCapacity, setFinancialCapacity] = useState("")
@@ -128,6 +332,34 @@ function PRPanel({ item, onReported }: {
 
   return (
     <div className="border-t border-border">
+      {/* Tabs */}
+      <div className="flex gap-1 px-5 pt-3 border-b border-border">
+        {([
+          { key: "documents", label: "Document Requests", icon: FileQuestion },
+          { key: "report",    label: "Due-Diligence Report", icon: Shield },
+        ] as const).map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            onClick={() => setActiveTab(key)}
+            className={cn(
+              "flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px",
+              activeTab === key
+                ? "border-ocean text-ocean"
+                : "border-transparent text-text-secondary hover:text-text-primary"
+            )}
+          >
+            <Icon className="w-4 h-4" />{label}
+          </button>
+        ))}
+      </div>
+
+      {/* Document requests tab */}
+      {activeTab === "documents" && (
+        <DocRequestsPanel buyerId={item.buyer_id} />
+      )}
+
+      {/* Report tab */}
+      {activeTab === "report" && <>
       {/* Request details */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 px-5 py-4 bg-gray-50/50 text-sm">
         <div>
@@ -291,6 +523,7 @@ function PRPanel({ item, onReported }: {
           {hasReport ? "Report already submitted for this request." : `No further action required (status: ${detail.status.replace(/_/g, " ")}).`}
         </div>
       )}
+      </>}
     </div>
   )
 }

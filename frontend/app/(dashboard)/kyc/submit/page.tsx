@@ -16,6 +16,8 @@ import {
   Loader2,
   RefreshCw,
   Send,
+  FileQuestion,
+  XCircle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -23,75 +25,139 @@ import { cn } from "@/lib/utils"
 import {
   kyc as kycApi,
   type KycDocument,
-  type DocumentTypeResponse,
+  type DocumentRequestResponse,
   ApiRequestError,
 } from "@/lib/api"
 
-// KycStatusResponse shape: { status: string, ... }
+// ── Request Slot — one slot per agent-requested document ─────────────────────
 
-// ── Document Slot ─────────────────────────────────────────────────────────────
-
-interface SlotProps {
-  docType: DocumentTypeResponse
+interface RequestSlotProps {
+  request: DocumentRequestResponse
   uploaded: KycDocument | undefined
-  onUpload: (typeId: string, file: File) => Promise<void>
-  onDelete: (docId: string) => Promise<void>
+  verificationStatus?: "verified" | "rejected" | "needs_clarification" | null
+  onUpload: (requestId: string, file: File) => Promise<void>
+  onDelete: (docId: string, requestId: string) => Promise<void>
   uploading: boolean
   deleting: boolean
 }
 
-function DocSlot({ docType, uploaded, onUpload, onDelete, uploading, deleting }: SlotProps) {
+function RequestSlot({ request, uploaded, verificationStatus, onUpload, onDelete, uploading, deleting }: RequestSlotProps) {
   const fileRef = useRef<HTMLInputElement>(null)
 
   const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    await onUpload(docType.id, file)
+    await onUpload(request.id, file)
     if (fileRef.current) fileRef.current.value = ""
   }
 
+  const isUploaded = request.status === "uploaded" || !!uploaded
+  const isVerified = verificationStatus === "verified"
+  const isRejected = verificationStatus === "rejected"
+  const needsInfo = verificationStatus === "needs_clarification"
+
+  const headerBorderCls = isVerified
+    ? "border-success/20"
+    : isRejected
+    ? "border-danger/20"
+    : needsInfo
+    ? "border-warning/20"
+    : "border-border"
+
   return (
-    <div className="bg-white rounded-xl border border-border shadow-sm overflow-hidden">
+    <div className={cn("bg-white rounded-xl border shadow-sm overflow-hidden", headerBorderCls)}>
       <div className="flex items-center gap-3 px-5 py-4 border-b border-border">
-        <h3 className="text-sm font-semibold text-text-primary flex-1">{docType.name}</h3>
+        <FileQuestion className="w-4 h-4 text-ocean shrink-0" />
+        <h3 className="text-sm font-semibold text-text-primary flex-1">{request.document_type_name}</h3>
         <Badge
           className={cn(
             "text-xs border shrink-0",
-            docType.is_required
+            isVerified
+              ? "bg-success/10 text-success border-success/20"
+              : isRejected
               ? "bg-danger/10 text-danger border-danger/20"
-              : "bg-gray-100 text-text-secondary border-gray-200"
+              : needsInfo
+              ? "bg-warning/10 text-warning border-warning/20"
+              : isUploaded
+              ? "bg-success/10 text-success border-success/20"
+              : request.priority === "required"
+              ? "bg-danger/10 text-danger border-danger/20"
+              : "bg-warning/10 text-warning border-warning/20"
           )}
         >
-          {docType.is_required ? "Required" : "Optional"}
+          {isVerified ? "Verified" : isRejected ? "Rejected — Re-upload" : needsInfo ? "Needs Clarification" : isUploaded ? "Uploaded" : request.priority}
         </Badge>
       </div>
 
       <div className="p-5 space-y-3">
-        {docType.description && (
+        {request.reason && (
           <p className="text-xs text-text-secondary flex items-start gap-1.5">
             <span className="text-ocean mt-0.5">•</span>
-            {docType.description}
+            {request.reason}
           </p>
         )}
 
+        {/* Rejection / needs-info banner */}
+        {isRejected && (
+          <div className="flex items-start gap-2 p-3 bg-danger/5 border border-danger/20 rounded-lg text-danger text-xs">
+            <XCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>This document was <strong>rejected</strong> by your verification agent. Delete the existing file and upload a corrected version.</span>
+          </div>
+        )}
+        {needsInfo && (
+          <div className="flex items-start gap-2 p-3 bg-warning/5 border border-warning/20 rounded-lg text-warning text-xs">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>Your agent needs clarification on this document. You may replace it with a clearer version.</span>
+          </div>
+        )}
+
         {uploaded ? (
-          <div className="flex items-center gap-3 p-3 bg-success/5 border border-success/20 rounded-lg">
-            <FileText className="w-5 h-5 text-success shrink-0" />
+          <div className={cn(
+            "flex items-center gap-3 p-3 rounded-lg border",
+            isVerified
+              ? "bg-success/5 border-success/20"
+              : isRejected
+              ? "bg-danger/5 border-danger/20"
+              : needsInfo
+              ? "bg-warning/5 border-warning/20"
+              : "bg-success/5 border-success/20"
+          )}>
+            <FileText className={cn("w-5 h-5 shrink-0", isRejected ? "text-danger" : needsInfo ? "text-warning" : "text-success")} />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-text-primary truncate">{uploaded.original_name ?? uploaded.document_type_name}</p>
+              <p className="text-sm font-medium text-text-primary truncate">{uploaded.original_name ?? request.document_type_name}</p>
               <p className="text-xs text-text-secondary">
                 {new Date(uploaded.uploaded_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
               </p>
             </div>
-            <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
-            <button
-              onClick={() => onDelete(uploaded.id)}
-              disabled={deleting}
-              className="p-1 rounded-md text-text-secondary hover:text-danger hover:bg-danger/5 transition-colors disabled:opacity-50"
-              title="Remove file"
-            >
-              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
-            </button>
+            {isVerified ? (
+              /* Verified — locked, cannot delete */
+              <div className="flex items-center gap-1.5 text-success shrink-0">
+                <CheckCircle2 className="w-4 h-4" />
+                <Lock className="w-3.5 h-3.5 opacity-60" title="Verified documents cannot be removed" />
+              </div>
+            ) : (
+              /* Not yet verified — allow delete/re-upload */
+              <>
+                {isRejected
+                  ? <XCircle className="w-5 h-5 text-danger shrink-0" />
+                  : needsInfo
+                  ? <AlertCircle className="w-5 h-5 text-warning shrink-0" />
+                  : <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
+                }
+                <button
+                  onClick={() => onDelete(uploaded.id, request.id)}
+                  disabled={deleting}
+                  className="p-1 rounded-md text-text-secondary hover:text-danger hover:bg-danger/5 transition-colors disabled:opacity-50"
+                  title={isRejected || needsInfo ? "Remove file and re-upload" : "Remove file"}
+                >
+                  {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
+                </button>
+              </>
+            )}
+          </div>
+        ) : request.status === "waived" ? (
+          <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-text-secondary">
+            This document has been waived by your verification agent.
           </div>
         ) : (
           <>
@@ -132,37 +198,37 @@ function DocSlot({ docType, uploaded, onUpload, onDelete, uploading, deleting }:
 export default function KYCSubmitPage() {
   const router = useRouter()
 
-  const [docTypes, setDocTypes] = useState<DocumentTypeResponse[]>([])
+  const [requests, setRequests] = useState<DocumentRequestResponse[]>([])
   const [myDocs, setMyDocs] = useState<KycDocument[]>([])
+  const [statusDocs, setStatusDocs] = useState<KycDocument[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
 
+  // uploadingId = request.id, deletingId = doc.id
   const [uploadingId, setUploadingId] = useState<string | null>(null)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId]   = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
-  const [submitting, setSubmitting] = useState(false)
+  const [submitting, setSubmitting]     = useState(false)
   const [submitSuccess, setSubmitSuccess] = useState(false)
-  const [submitError, setSubmitError] = useState<string | null>(null)
-
-  // Track if user already has an existing KYC (for resubmit vs submit)
-  const [isResubmit, setIsResubmit] = useState(false)
+  const [submitError, setSubmitError]   = useState<string | null>(null)
+  const [isResubmit, setIsResubmit]     = useState(false)
 
   const load = useCallback(async () => {
     setIsLoading(true)
     setLoadError(null)
     try {
-      const [types, docs, status] = await Promise.allSettled([
-        kycApi.getDocumentTypes(),
+      const [reqs, docs, status] = await Promise.allSettled([
+        kycApi.listDocumentRequests(),
         kycApi.listDocuments(),
         kycApi.getStatus(),
       ])
-      if (types.status === "fulfilled") setDocTypes(types.value)
-      if (docs.status === "fulfilled") setMyDocs(docs.value)
+      if (reqs.status === "fulfilled")   setRequests(reqs.value)
+      if (docs.status === "fulfilled")   setMyDocs(docs.value)
       if (status.status === "fulfilled") {
         const s = status.value
-        // If already has rejected or requires_resubmission, use resubmit endpoint
         setIsResubmit(["rejected", "requires_resubmission"].includes(s?.kyc_status ?? ""))
+        setStatusDocs(s?.documents ?? [])
       }
     } catch (e) {
       setLoadError(e instanceof ApiRequestError ? e.message : "Failed to load KYC data.")
@@ -173,19 +239,18 @@ export default function KYCSubmitPage() {
 
   useEffect(() => { load() }, [load])
 
-  const handleUpload = async (typeId: string, file: File) => {
-    setUploadingId(typeId)
+  // Upload file, then fulfill the request
+  const handleUpload = async (requestId: string, file: File) => {
+    setUploadingId(requestId)
     setUploadError(null)
     try {
       const fd = new FormData()
       fd.append("file", file)
-      fd.append("document_type_id", typeId)
       const doc = await kycApi.uploadDocument(fd)
-      setMyDocs((prev) => {
-        // Replace existing doc for same type if any
-        const filtered = prev.filter((d) => d.document_type_id !== typeId)
-        return [...filtered, doc]
-      })
+      // Link the uploaded doc to the request
+      await kycApi.fulfillDocumentRequest(requestId, doc.id)
+      setMyDocs((prev) => [...prev, doc])
+      setRequests((prev) => prev.map((r) => r.id === requestId ? { ...r, status: "uploaded" as const, fulfilled_doc_id: doc.id } : r))
     } catch (e) {
       setUploadError(e instanceof ApiRequestError ? e.message : "Upload failed.")
     } finally {
@@ -193,12 +258,13 @@ export default function KYCSubmitPage() {
     }
   }
 
-  const handleDelete = async (docId: string) => {
+  const handleDelete = async (docId: string, requestId: string) => {
     setDeletingId(docId)
     setUploadError(null)
     try {
       await kycApi.deleteDocument(docId)
       setMyDocs((prev) => prev.filter((d) => d.id !== docId))
+      setRequests((prev) => prev.map((r) => r.id === requestId ? { ...r, status: "pending" as const, fulfilled_doc_id: null } : r))
     } catch (e) {
       setUploadError(e instanceof ApiRequestError ? e.message : "Delete failed.")
     } finally {
@@ -224,12 +290,12 @@ export default function KYCSubmitPage() {
     }
   }
 
-  // Compute upload stats
-  const requiredTypes = docTypes.filter((t) => t.is_required)
-  const uploadedTypeIds = new Set(myDocs.map((d) => d.document_type_id))
-  const allRequiredUploaded = requiredTypes.every((t) => uploadedTypeIds.has(t.id))
-  const uploadedCount = myDocs.length
-  const totalCount = docTypes.length
+  // Only pending/required requests block submission
+  const activeRequests  = requests.filter((r) => r.status !== "waived")
+  const requiredPending = requests.filter((r) => r.priority === "required" && r.status === "pending")
+  const allRequiredDone = requiredPending.length === 0
+  const uploadedCount   = requests.filter((r) => r.status === "uploaded").length
+  const totalActive     = activeRequests.length
 
   // ── Loading ───────────────────────────────────────────────────────────────────
 
@@ -267,7 +333,7 @@ export default function KYCSubmitPage() {
               {isResubmit ? "Resubmission received!" : "Documents submitted!"}
             </p>
             <p className="text-sm text-text-secondary mt-0.5">
-              Our KYC team will review your documents within 1–3 business days. Redirecting…
+              Your verification agent will review your documents shortly. Redirecting…
             </p>
           </div>
         </div>
@@ -277,22 +343,24 @@ export default function KYCSubmitPage() {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      {/* Breadcrumb + step indicator */}
+      {/* Breadcrumb */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <nav className="flex items-center gap-1 text-sm text-text-secondary">
           <Link href="/kyc" className="hover:text-ocean transition-colors">KYC</Link>
           <ChevronRight className="w-4 h-4" />
           <span className="text-text-primary font-medium">
-            {isResubmit ? "Resubmit Documents" : "Submit Documents"}
+            {isResubmit ? "Resubmit Documents" : "Upload Documents"}
           </span>
         </nav>
-        <div className="flex items-center gap-2 text-sm text-text-secondary">
-          <div className="flex gap-1">
-            <div className="w-6 h-1.5 rounded-full bg-ocean" />
-            <div className="w-6 h-1.5 rounded-full bg-gray-200" />
+        {totalActive > 0 && (
+          <div className="flex items-center gap-2 text-sm text-text-secondary">
+            <div className="flex gap-1">
+              <div className="w-6 h-1.5 rounded-full bg-ocean" />
+              <div className="w-6 h-1.5 rounded-full bg-gray-200" />
+            </div>
+            <span>{uploadedCount}/{totalActive} uploaded</span>
           </div>
-          <span>Step 1 of 2 — Documents</span>
-        </div>
+        )}
       </div>
 
       {/* Security intro */}
@@ -301,24 +369,24 @@ export default function KYCSubmitPage() {
           <ShieldCheck className="w-5 h-5 text-ocean" />
         </div>
         <div>
-          <p className="font-semibold text-text-primary">Secure Document Submission</p>
+          <p className="font-semibold text-text-primary">Upload Requested Documents</p>
           <p className="text-sm text-text-secondary mt-1 leading-relaxed">
-            All documents are encrypted and stored securely. Only our verified KYC team can access your documents.
-            Your data is never shared with buyers or sellers on the platform.
+            Your verification agent has requested the documents below. Upload each one to proceed.
+            All files are encrypted and only accessible to your assigned agent.
           </p>
         </div>
       </div>
 
       {/* Progress bar */}
-      {totalCount > 0 && (
+      {totalActive > 0 && (
         <div className="flex items-center gap-3">
           <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
             <div
               className="h-full bg-ocean rounded-full transition-all duration-500"
-              style={{ width: `${totalCount > 0 ? (uploadedCount / totalCount) * 100 : 0}%` }}
+              style={{ width: `${(uploadedCount / totalActive) * 100}%` }}
             />
           </div>
-          <span className="text-sm text-text-secondary shrink-0">{uploadedCount}/{totalCount} uploaded</span>
+          <span className="text-sm text-text-secondary shrink-0">{uploadedCount}/{totalActive} uploaded</span>
         </div>
       )}
 
@@ -331,63 +399,79 @@ export default function KYCSubmitPage() {
         </div>
       )}
 
-      {/* Empty doc types */}
-      {docTypes.length === 0 && (
-        <div className="text-center py-10 text-text-secondary text-sm">
-          No document types configured yet. Contact support.
+      {/* No requests yet */}
+      {requests.length === 0 && (
+        <div className="text-center py-12 bg-white rounded-xl border border-border">
+          <FileQuestion className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+          <p className="font-medium text-text-secondary">No documents requested yet</p>
+          <p className="text-sm text-text-secondary mt-1">Your verification agent hasn&apos;t requested any documents yet. Check back soon.</p>
+          <Link href="/kyc" className="inline-block mt-4">
+            <Button variant="outline" size="sm">Back to KYC</Button>
+          </Link>
         </div>
       )}
 
-      {/* Document slots */}
+      {/* Request slots */}
       <div className="space-y-4">
-        {docTypes.map((dt) => (
-          <DocSlot
-            key={dt.id}
-            docType={dt}
-            uploaded={myDocs.find((d) => d.document_type_id === dt.id)}
-            onUpload={handleUpload}
-            onDelete={handleDelete}
-            uploading={uploadingId === dt.id}
-            deleting={deletingId === myDocs.find((d) => d.document_type_id === dt.id)?.id}
-          />
-        ))}
+        {activeRequests.map((req) => {
+          const fulfilledDoc = myDocs.find((d) => d.id === req.fulfilled_doc_id)
+          const verificationStatus =
+            (statusDocs.find((d) => d.id === req.fulfilled_doc_id) ?? fulfilledDoc)
+              ?.verification?.status ?? null
+          return (
+            <RequestSlot
+              key={req.id}
+              request={req}
+              uploaded={fulfilledDoc}
+              verificationStatus={verificationStatus}
+              onUpload={handleUpload}
+              onDelete={handleDelete}
+              uploading={uploadingId === req.id}
+              deleting={deletingId === (fulfilledDoc?.id ?? "")}
+            />
+          )
+        })}
       </div>
 
-      {/* Security note */}
-      <div className="flex items-center gap-2 text-sm text-text-secondary px-1">
-        <Lock className="w-4 h-4 text-ocean shrink-0" />
-        <span>Files are uploaded over a 256-bit encrypted connection and stored in secure cloud storage</span>
-      </div>
+      {requests.length > 0 && (
+        <>
+          {/* Security note */}
+          <div className="flex items-center gap-2 text-sm text-text-secondary px-1">
+            <Lock className="w-4 h-4 text-ocean shrink-0" />
+            <span>Files are uploaded over a 256-bit encrypted connection and stored in secure cloud storage</span>
+          </div>
 
-      {/* Submit error */}
-      {submitError && (
-        <div className="flex items-center gap-2 p-3 bg-danger/10 border border-danger/20 rounded-lg text-danger text-sm">
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          {submitError}
-        </div>
-      )}
+          {/* Submit error */}
+          {submitError && (
+            <div className="flex items-center gap-2 p-3 bg-danger/10 border border-danger/20 rounded-lg text-danger text-sm">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              {submitError}
+            </div>
+          )}
 
-      {/* Actions */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:justify-between pt-2">
-        <Link href="/kyc">
-          <Button variant="outline">Back to KYC</Button>
-        </Link>
-        <Button
-          className="bg-ocean hover:bg-ocean-dark text-white h-12 px-8"
-          disabled={!allRequiredUploaded || submitting}
-          onClick={handleSubmit}
-        >
-          {submitting
-            ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Submitting…</>
-            : <><Send className="w-4 h-4 mr-2" />{isResubmit ? "Resubmit for Verification" : "Submit for Verification"}<ArrowRight className="w-4 h-4 ml-2" /></>
-          }
-        </Button>
-      </div>
+          {/* Actions */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-between pt-2">
+            <Link href="/kyc">
+              <Button variant="outline">Back to KYC</Button>
+            </Link>
+            <Button
+              className="bg-ocean hover:bg-ocean-dark text-white h-12 px-8"
+              disabled={!allRequiredDone || submitting}
+              onClick={handleSubmit}
+            >
+              {submitting
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Submitting…</>
+                : <><Send className="w-4 h-4 mr-2" />{isResubmit ? "Resubmit for Verification" : "Submit for Verification"}<ArrowRight className="w-4 h-4 ml-2" /></>
+              }
+            </Button>
+          </div>
 
-      {!allRequiredUploaded && (
-        <p className="text-xs text-center text-text-secondary">
-          Upload all required documents to enable submission
-        </p>
+          {!allRequiredDone && (
+            <p className="text-xs text-center text-text-secondary">
+              Upload all required documents to enable submission
+            </p>
+          )}
+        </>
       )}
     </div>
   )

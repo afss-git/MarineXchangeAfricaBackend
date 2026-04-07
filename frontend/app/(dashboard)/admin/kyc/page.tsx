@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils"
 import {
   kycAdmin,
   KycSubmissionListItem, KycSubmissionResponse, DocumentTypeResponse,
+  DocVerificationBrief,
 } from "@/lib/api"
 import { useAdminKycQueue } from "@/lib/hooks"
 
@@ -152,27 +153,56 @@ function SubmissionDetail({ subId, onDecided }: { subId: string; onDecided: () =
           <p className="text-sm text-text-secondary py-2">No documents uploaded yet.</p>
         )}
         <div className="divide-y divide-border rounded-lg border border-border overflow-hidden">
-          {detail.documents.map((doc) => (
-            <div key={doc.id} className="flex items-center gap-3 px-4 py-3 bg-white">
-              <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
-                <FileText className="w-4 h-4 text-text-secondary" />
+          {detail.documents.map((doc) => {
+            const v = doc.verification
+            return (
+              <div key={doc.id} className="flex items-center gap-3 px-4 py-3 bg-white">
+                <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+                  {v?.status === "verified" ? (
+                    <CheckCircle2 className="w-4 h-4 text-success" />
+                  ) : v?.status === "rejected" ? (
+                    <XCircle className="w-4 h-4 text-danger" />
+                  ) : v?.status === "needs_clarification" ? (
+                    <AlertCircle className="w-4 h-4 text-warning" />
+                  ) : (
+                    <FileText className="w-4 h-4 text-text-secondary" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-medium text-text-primary">{doc.document_type_name ?? doc.original_name}</p>
+                    {v && (
+                      <Badge className={cn("text-xs border capitalize shrink-0",
+                        v.status === "verified" ? "bg-success/10 text-success border-success/20" :
+                        v.status === "rejected" ? "bg-danger/10 text-danger border-danger/20" :
+                        "bg-warning/10 text-warning border-warning/20"
+                      )}>
+                        {v.status === "needs_clarification" ? "Needs Info" : v.status}
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-text-secondary">
+                    {doc.original_name ?? "—"} · {fileSizeLabel(doc.file_size_bytes)} · {fmtDate(doc.uploaded_at)}
+                    {v && <span className="ml-2 text-text-tertiary">· reviewed by {v.verified_by_name ?? "agent"}</span>}
+                  </p>
+                  {v?.rejection_reason && (
+                    <p className="text-xs text-danger mt-0.5">{v.rejection_reason}</p>
+                  )}
+                  {v?.notes && (
+                    <p className="text-xs text-text-secondary italic mt-0.5">{v.notes}</p>
+                  )}
+                </div>
+                <a
+                  href={doc.signed_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-xs text-ocean hover:underline shrink-0"
+                >
+                  <Eye className="w-3.5 h-3.5" /> View
+                </a>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-text-primary">{doc.document_type_name}</p>
-                <p className="text-xs text-text-secondary">
-                  {doc.original_name ?? "—"} · {fileSizeLabel(doc.file_size_bytes)} · {fmtDate(doc.uploaded_at)}
-                </p>
-              </div>
-              <a
-                href={doc.signed_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 text-xs text-ocean hover:underline shrink-0"
-              >
-                <Eye className="w-3.5 h-3.5" /> View
-              </a>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 

@@ -131,9 +131,9 @@ export interface CategoryResponse {
 export interface KycDocument {
   id: string
   submission_id: string
-  document_type_id: string
-  document_type_name: string
-  document_type_slug: string
+  document_type_id: string | null
+  document_type_name: string | null
+  document_type_slug: string | null
   storage_path: string
   signed_url: string
   original_name: string | null
@@ -141,6 +141,7 @@ export interface KycDocument {
   mime_type: string | null
   file_hash: string
   uploaded_at: string
+  verification?: DocVerificationBrief | null
 }
 
 export interface KycStatusResponse {
@@ -378,6 +379,23 @@ async function request<T>(
   }
 
   return body as T
+}
+
+// Binary/blob fetch (for streaming document endpoints)
+async function fetchBlob(path: string): Promise<{ blob: Blob; mimeType: string }> {
+  const url = `${API_BASE}${path}`
+  const headers: Record<string, string> = {}
+  if (typeof window !== "undefined") {
+    const token = localStorage.getItem("access_token")
+    if (token) headers["Authorization"] = `Bearer ${token}`
+  }
+  const res = await fetch(url, { headers })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new ApiRequestError(res.status, body)
+  }
+  const blob = await res.blob()
+  return { blob, mimeType: blob.type || res.headers.get("content-type") || "application/octet-stream" }
 }
 
 // Multipart upload helper (no Content-Type header — browser sets boundary)
@@ -710,6 +728,14 @@ export const kyc = {
 
   getDocumentTypes: () =>
     request<DocumentTypeResponse[]>("/kyc/document-types"),
+
+  listDocumentRequests: () =>
+    request<DocumentRequestResponse[]>("/kyc/me/document-requests"),
+
+  fulfillDocumentRequest: (requestId: string, documentId: string) =>
+    request<DocumentRequestResponse>(`/kyc/me/document-requests/${requestId}/fulfill`, {
+      method: "POST", body: JSON.stringify({ document_id: documentId }),
+    }),
 }
 
 // ── Purchase Request endpoints ────────────────────────────────────────────────
@@ -2099,12 +2125,21 @@ export interface DocumentTypeResponse {
   is_required: boolean; is_active: boolean; display_order: number; created_at: string
 }
 
+export interface DocVerificationBrief {
+  status: "verified" | "rejected" | "needs_clarification"
+  rejection_reason: string | null
+  notes: string | null
+  verified_by_name: string | null
+  created_at: string
+}
+
 export interface KycDocumentResponse {
-  id: string; submission_id: string; document_type_id: string
-  document_type_name: string; document_type_slug: string
+  id: string; submission_id: string; document_type_id: string | null
+  document_type_name: string | null; document_type_slug: string | null
   storage_path: string; signed_url: string
   original_name: string | null; file_size_bytes: number | null
   mime_type: string | null; file_hash: string; uploaded_at: string
+  verification?: DocVerificationBrief | null
 }
 
 export interface KycReviewResponse {
@@ -2558,8 +2593,9 @@ export interface KycAgentReviewRequest {
 // ── Enhanced KYC types ────────────────────────────────────────────────────────
 
 export interface DocumentRequestResponse {
-  id: string; submission_id: string; document_type_id: string
+  id: string; submission_id: string; document_type_id: string | null
   document_type_name: string; document_type_slug?: string
+  custom_document_name?: string | null
   requested_by: string; requested_by_name?: string
   reason: string | null; priority: "required" | "recommended"
   status: "pending" | "uploaded" | "waived"
@@ -2653,7 +2689,8 @@ export const kycAgent = {
 
   // Document requests
   requestDocuments: (submissionId: string, requests: Array<{
-    document_type_id: string; reason?: string; priority?: "required" | "recommended"
+    document_type_id?: string; custom_document_name?: string
+    reason?: string; priority?: "required" | "recommended"
   }>) =>
     request<DocumentRequestResponse[]>(`/kyc/agent/submissions/${submissionId}/document-requests`, {
       method: "POST", body: JSON.stringify({ requests }),
@@ -2667,6 +2704,13 @@ export const kycAgent = {
       method: "POST", body: JSON.stringify({ reason }),
     }),
 
+  // Get or create KYC submission for a buyer (called from purchase request context)
+  ensureBuyerSubmission: (buyerId: string) =>
+    request<{ submission_id: string; status: string; cycle_number: number }>(
+      `/kyc/agent/buyer/${buyerId}/ensure-submission`,
+      { method: "POST" }
+    ),
+
   // Verification calls
   initiateCall: (submissionId: string, data: { buyer_phone: string; agent_phone: string }) =>
     request<VerificationCallResponse>(`/kyc/agent/submissions/${submissionId}/call`, {
@@ -2677,6 +2721,11 @@ export const kycAgent = {
     request<{ message: string }>(`/kyc/agent/calls/${callId}/notes`, {
       method: "POST", body: JSON.stringify(data),
     }),
+
+  // Stream document inline — returns a blob URL for <img>/<iframe> display
+  // Agents get a watermarked copy; admins get the original
+  streamDocument: (documentId: string) =>
+    fetchBlob(`/kyc/agent/documents/${documentId}/stream`),
 }
 
 // ── KYC Buyer Enhanced API ──────────────────────────────────────────────────
