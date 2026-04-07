@@ -813,26 +813,23 @@ async def list_agent_assignments(
     rows = await db.fetch(
         """
         SELECT
-            a.id, a.submission_id, a.agent_id, a.status,
-            a.created_at, a.updated_at,
-            s.cycle_number, s.status AS submission_status,
-            s.submitted_at,
+            s.id, s.buyer_id, s.cycle_number, s.status, s.submitted_at, s.created_at,
             p.full_name  AS buyer_name,
             p.company_name AS buyer_company,
             p.phone_verified AS buyer_phone_verified,
             p.phone AS buyer_phone,
-            ab.full_name AS assigned_by_name,
+            ag.full_name AS assigned_agent,
             (SELECT COUNT(*) FROM kyc.documents d
-             WHERE d.submission_id = a.submission_id AND d.deleted_at IS NULL) AS document_count,
+             WHERE d.submission_id = s.id AND d.deleted_at IS NULL) AS document_count,
             (SELECT r.risk_score FROM kyc.reviews r
-             WHERE r.submission_id = a.submission_id
+             WHERE r.submission_id = s.id
              ORDER BY r.created_at DESC LIMIT 1) AS risk_score
         FROM kyc.assignments a
         JOIN kyc.submissions s ON s.id = a.submission_id
         JOIN public.profiles p ON p.id = s.buyer_id
-        LEFT JOIN public.profiles ab ON ab.id = a.assigned_by
+        LEFT JOIN public.profiles ag ON ag.id = a.agent_id
         WHERE a.agent_id = $1
-        ORDER BY a.created_at DESC
+        ORDER BY s.created_at DESC
         LIMIT $2 OFFSET $3
         """,
         agent_id, page_size, offset,
