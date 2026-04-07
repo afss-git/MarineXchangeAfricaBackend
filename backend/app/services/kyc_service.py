@@ -103,14 +103,16 @@ async def _get_signed_url(storage_path: str) -> str:
 
 async def _enrich_document(db: asyncpg.Connection, doc: asyncpg.Record) -> dict:
     """Adds document_type_name, document_type_slug, signed_url to a document row."""
-    dt = await db.fetchrow(
-        "SELECT name, slug FROM kyc.document_types WHERE id = $1",
-        doc["document_type_id"],
-    )
+    dt = None
+    if doc["document_type_id"]:
+        dt = await db.fetchrow(
+            "SELECT name, slug FROM kyc.document_types WHERE id = $1",
+            doc["document_type_id"],
+        )
     signed_url = await _get_signed_url(doc["storage_path"])
     return {
         **dict(doc),
-        "document_type_name": dt["name"] if dt else None,
+        "document_type_name": dt["name"] if dt else doc.get("original_name"),
         "document_type_slug": dt["slug"] if dt else None,
         "signed_url": signed_url,
     }
@@ -329,10 +331,10 @@ async def get_kyc_status(db: asyncpg.Connection, buyer_id: uuid.UUID) -> dict:
     if sub_id:
         doc_rows = await db.fetch(
             """
-            SELECT d.id, d.document_type_id, dt.name AS document_type_name, dt.slug AS document_type_slug,
+            SELECT d.id, d.document_type_id, COALESCE(dt.name, d.original_name) AS document_type_name, dt.slug AS document_type_slug,
                    d.original_name, d.uploaded_at
             FROM kyc.documents d
-            JOIN kyc.document_types dt ON dt.id = d.document_type_id
+            LEFT JOIN kyc.document_types dt ON dt.id = d.document_type_id
             WHERE d.submission_id = $1 AND d.deleted_at IS NULL
             ORDER BY d.uploaded_at
             """,
@@ -603,7 +605,7 @@ async def submit_kyc(db: asyncpg.Connection, actor: dict) -> dict:
         "SELECT id, name FROM kyc.document_types WHERE is_required = TRUE AND is_active = TRUE"
     )
     uploaded_type_ids = await db.fetch(
-        "SELECT DISTINCT document_type_id FROM kyc.documents WHERE submission_id = $1 AND deleted_at IS NULL",
+        "SELECT DISTINCT document_type_id FROM kyc.documents WHERE submission_id = $1 AND deleted_at IS NULL AND document_type_id IS NOT NULL",
         sub_id,
     )
     uploaded_ids = {str(r["document_type_id"]) for r in uploaded_type_ids}
@@ -1599,11 +1601,11 @@ async def get_document_verifications(
     rows = await db.fetch(
         """
         SELECT dv.*, d.original_name, d.document_type_id,
-               dt.name AS document_type_name,
+               COALESCE(dt.name, d.original_name) AS document_type_name,
                p.full_name AS verified_by_name
         FROM kyc.document_verifications dv
         JOIN kyc.documents d ON d.id = dv.document_id
-        JOIN kyc.document_types dt ON dt.id = d.document_type_id
+        LEFT JOIN kyc.document_types dt ON dt.id = d.document_type_id
         LEFT JOIN public.profiles p ON p.id = dv.verified_by
         WHERE d.submission_id = $1
         ORDER BY dv.created_at
