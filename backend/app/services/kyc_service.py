@@ -405,22 +405,24 @@ async def get_or_create_draft_submission(
 async def upload_kyc_document(
     db: asyncpg.Connection,
     file: UploadFile,
-    document_type_id: uuid.UUID,
+    document_type_id: uuid.UUID | None,
     actor: dict,
 ) -> dict:
     """Buyer uploads a document to their current draft submission."""
     buyer_id = uuid.UUID(str(actor["id"]))
 
-    # Validate document type exists and is active
-    doc_type = await db.fetchrow(
-        "SELECT * FROM kyc.document_types WHERE id = $1 AND is_active = TRUE",
-        document_type_id,
-    )
-    if not doc_type:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document type not found or not active.",
+    # Validate document type if provided
+    doc_type = None
+    if document_type_id:
+        doc_type = await db.fetchrow(
+            "SELECT * FROM kyc.document_types WHERE id = $1 AND is_active = TRUE",
+            document_type_id,
         )
+        if not doc_type:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document type not found or not active.",
+            )
 
     submission = await get_or_create_draft_submission(db, buyer_id)
     submission_id = submission["id"]

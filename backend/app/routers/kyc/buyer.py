@@ -16,6 +16,7 @@ POST   /kyc/me/document-requests/{id}/fulfill — link uploaded doc to a request
 """
 from __future__ import annotations
 
+from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, UploadFile, File, status
@@ -91,10 +92,10 @@ async def list_my_documents(
     ),
 )
 async def upload_document(
-    document_type_id: UUID,
     file: UploadFile,
     db: DbConn,
     current_user: BuyerUser,
+    document_type_id: Optional[UUID] = None,
 ):
     return await upload_kyc_document(db, file, document_type_id, current_user)
 
