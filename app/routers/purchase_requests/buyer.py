@@ -25,7 +25,7 @@ router = APIRouter(tags=["Purchase Requests — Buyer"])
 
 
 @router.post(
-    "/",
+    "",
     response_model=PurchaseRequestResponse,
     status_code=201,
     summary="Submit a purchase request",
