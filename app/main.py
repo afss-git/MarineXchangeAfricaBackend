@@ -136,6 +136,24 @@ if not settings.is_production:
         return HTMLResponse(content=html.body, headers={"Content-Security-Policy": _DOCS_CSP})
 
 
+# ── Trailing-slash normalizer ────────────────────────────────────────────────
+# Vercel / Next.js rewrites strip trailing slashes before forwarding to the
+# backend.  With redirect_slashes=False, routes registered as "/foo/" would
+# 404 for "/foo".  This middleware transparently appends the slash *internally*
+# (no HTTP redirect) so the auth header is never dropped.
+
+@app.middleware("http")
+async def normalize_trailing_slash(request: Request, call_next):
+    path = request.scope["path"]
+    if path != "/" and not path.endswith("/"):
+        scope = dict(request.scope)
+        scope["path"] = path + "/"
+        if "raw_path" in scope:
+            scope["raw_path"] = (path + "/").encode("latin-1")
+        request = Request(scope, request.receive, request._send)
+    return await call_next(request)
+
+
 # ── Middleware (order matters — outermost first) ───────────────────────────────
 
 app.add_middleware(
