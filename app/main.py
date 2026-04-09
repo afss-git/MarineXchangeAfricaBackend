@@ -136,24 +136,6 @@ if not settings.is_production:
         return HTMLResponse(content=html.body, headers={"Content-Security-Policy": _DOCS_CSP})
 
 
-# ── Trailing-slash normalizer ────────────────────────────────────────────────
-# Vercel / Next.js rewrites strip trailing slashes before forwarding to the
-# backend.  With redirect_slashes=False, routes registered as "/foo/" would
-# 404 for "/foo".  This middleware transparently appends the slash *internally*
-# (no HTTP redirect) so the auth header is never dropped.
-
-@app.middleware("http")
-async def normalize_trailing_slash(request: Request, call_next):
-    path = request.scope["path"]
-    if path != "/" and not path.endswith("/"):
-        scope = dict(request.scope)
-        scope["path"] = path + "/"
-        if "raw_path" in scope:
-            scope["raw_path"] = (path + "/").encode("latin-1")
-        request = Request(scope, request.receive, request._send)
-    return await call_next(request)
-
-
 # ── Middleware (order matters — outermost first) ───────────────────────────────
 
 app.add_middleware(
@@ -168,6 +150,29 @@ app.add_middleware(
 
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(SlowAPIMiddleware)
+
+# ── Trailing-slash normalizer (pure ASGI — innermost, runs just before routing)
+# Vercel / Next.js strips trailing slashes before forwarding to the backend.
+# With redirect_slashes=False the router won't 307-redirect, but routes like
+# POST /purchase-requests/ become 404 when received as /purchase-requests.
+# This middleware mutates scope["path"] directly (no HTTP redirect, no header
+# loss) before the request reaches FastAPI's router.
+
+class _TrailingSlashMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            path = scope.get("path", "")
+            if path and path != "/" and not path.endswith("/"):
+                scope = dict(scope)
+                scope["path"] = path + "/"
+                if scope.get("raw_path"):
+                    scope["raw_path"] = (path + "/").encode("latin-1")
+        await self.app(scope, receive, send)
+
+app.add_middleware(_TrailingSlashMiddleware)
 
 # Rate limit exceeded handler
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
