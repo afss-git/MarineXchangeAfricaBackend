@@ -117,6 +117,7 @@ app = FastAPI(
     redoc_url=None,
     openapi_url="/openapi.json" if not settings.is_production else None,
     lifespan=lifespan,
+    redirect_slashes=False,  # Prevent 307 redirects that drop Authorization headers
 )
 
 # ── Custom Docs endpoints (only in development) ───────────────────────────────
