@@ -49,7 +49,7 @@ async def voice_connect(
 <Response>
     <Say voice="alice">
         This call is being recorded for verification purposes.
-        You are being connected to a MarineXchange buyer.
+        You are being connected to a Harbours360 buyer.
         Please wait.
     </Say>
     <Record

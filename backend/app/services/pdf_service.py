@@ -1,7 +1,7 @@
 """
 Phase 10 — ReportLab PDF Invoice Generator.
 
-Generates branded PDF invoices for MarineXchange Africa deals.
+Generates branded PDF invoices for Harbours360 deals.
 Returns raw bytes — caller uploads to Supabase Storage.
 
 Security:
@@ -176,7 +176,7 @@ def _make_styles() -> dict[str, ParagraphStyle]:
 
 def generate_invoice_pdf(invoice_data: dict) -> bytes:
     """
-    Generate a branded MarineXchange Africa invoice PDF.
+    Generate a branded Harbours360 invoice PDF.
 
     invoice_data keys (all strings unless noted):
       invoice_ref        — e.g. "MXI-2026-00001"
@@ -209,7 +209,7 @@ def generate_invoice_pdf(invoice_data: dict) -> bytes:
         topMargin=MARGIN,
         bottomMargin=MARGIN,
         title=f"Invoice {_safe_str(invoice_data.get('invoice_ref', ''))}",
-        author="MarineXchange Africa",
+        author="Harbours360",
         subject="Deal Invoice",
     )
 
@@ -298,7 +298,7 @@ def generate_invoice_pdf(invoice_data: dict) -> bytes:
 
     from_table = Table([
         ["FROM"],
-        [Paragraph("<b>MarineXchange Africa</b>", styles["body"])],
+        [Paragraph("<b>Harbours360</b>", styles["body"])],
         [Paragraph(_safe_str(seller_name), styles["body"])],
     ], colWidths=[half])
     from_table.setStyle(party_header_style)
@@ -429,7 +429,7 @@ def generate_invoice_pdf(invoice_data: dict) -> bytes:
     story.append(Spacer(1, 3 * mm))
 
     footer_data = [[
-        Paragraph("MarineXchange Africa — Global Maritime Marketplace", styles["footer"]),
+        Paragraph("Harbours360 — Global Maritime Marketplace", styles["footer"]),
         Paragraph("CONFIDENTIAL", styles["confidential"]),
     ]]
     footer_table = Table(footer_data, colWidths=[col_w * 0.7, col_w * 0.3])

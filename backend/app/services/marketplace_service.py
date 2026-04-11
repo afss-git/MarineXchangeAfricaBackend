@@ -2138,7 +2138,7 @@ async def get_product_timeline(
 ) -> list[dict]:
     """
     Returns a unified chronological timeline of all events for a product.
-    For seller view: admin names are anonymised to 'MarineXchange Team',
+    For seller view: admin names are anonymised to 'Harbours360 Team',
     agent names to 'Verification Agent'.
     """
     events: list[dict] = []
@@ -2161,7 +2161,7 @@ async def get_product_timeline(
         is_agent = "verification_agent" in actor_roles
 
         if viewer_role == "seller":
-            actor = "MarineXchange Team" if is_admin else "You"
+            actor = "Harbours360 Team" if is_admin else "You"
         elif viewer_role == "agent":
             actor = "Admin" if is_admin else (r["actor_name"] or "Seller")
         else:
@@ -2204,7 +2204,7 @@ async def get_product_timeline(
 
         if viewer_role == "seller":
             detail = f"A verification agent has been assigned to inspect your listing{cycle_suffix}."
-            actor = "MarineXchange Team"
+            actor = "Harbours360 Team"
         elif viewer_role == "agent":
             agent_display = r["agent_name"] or "Agent"
             detail = f"Assigned to {agent_display}{cycle_suffix}"

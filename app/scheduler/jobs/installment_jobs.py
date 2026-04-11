@@ -79,7 +79,7 @@ async def _send_reminders(db) -> None:
                 amount_due=str(row["amount_due"]),
                 currency=row["currency"],
                 due_date=str(row["due_date"]),
-                bank_name=row["bank_name"] or "MarineXchange Africa",
+                bank_name=row["bank_name"] or "Harbours360",
                 account_number=row["account_number"] or "",
                 payment_reference=row["deal_ref"],
                 days_until_due=REMINDER_DAYS_BEFORE,

@@ -234,7 +234,7 @@ async def get_listing_verification_status(
     description=(
         "Returns a chronological list of all events for the listing: "
         "status changes, agent assignments, and inspection reports. "
-        "Admin names are anonymised — sellers see 'MarineXchange Team'."
+        "Admin names are anonymised — sellers see 'Harbours360 Team'."
     ),
 )
 async def get_listing_timeline(

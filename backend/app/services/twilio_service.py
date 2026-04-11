@@ -92,7 +92,7 @@ async def send_phone_otp(db: asyncpg.Connection, phone: str) -> dict:
             message = client.messages.create(
                 to=phone,
                 from_=settings.TWILIO_PHONE_NUMBER,
-                body=f"Your MarineXchange verification code is: {code}. It expires in {OTP_TTL_MINUTES} minutes.",
+                body=f"Your Harbours360 verification code is: {code}. It expires in {OTP_TTL_MINUTES} minutes.",
             )
             logger.info("OTP SMS sent to %s — sid=%s", phone, message.sid)
             sms_sent = True

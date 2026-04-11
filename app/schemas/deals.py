@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 class PaymentAccountCreate(BaseModel):
     bank_name: str = Field(..., min_length=1, max_length=200)
-    account_name: str = Field(default="MarineXchange Africa Ltd", max_length=200)
+    account_name: str = Field(default="Harbours360 Ltd", max_length=200)
     account_number: str = Field(..., min_length=1, max_length=100)
     sort_code: str | None = None
     swift_code: str | None = None

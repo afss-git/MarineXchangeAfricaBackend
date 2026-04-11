@@ -1,5 +1,5 @@
 """
-MarineXchange Africa — FastAPI Application Entry Point
+Harbours360 — FastAPI Application Entry Point
 
 Security layers applied in order:
 1. Cloudflare (WAF, DDoS, rate limiting) — infrastructure level
@@ -71,7 +71,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting MarineXchange Africa API (env=%s)", settings.ENVIRONMENT)
+    logger.info("Starting Harbours360 API (env=%s)", settings.ENVIRONMENT)
 
     if settings.is_production:
         # Production: fail fast — do not start if DB is unreachable.
@@ -110,7 +110,7 @@ app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description=(
-        "MarineXchange Africa — B2B Marketplace API for high-value maritime and "
+        "Harbours360 — B2B Marketplace API for high-value maritime and "
         "industrial asset transactions across Africa."
     ),
     docs_url=None,       # Served manually below with correct CSP

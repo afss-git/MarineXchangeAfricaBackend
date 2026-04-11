@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     )
 
     # ── App ───────────────────────────────────────────────────────────────────
-    APP_NAME: str = "MarineXchange Africa API"
+    APP_NAME: str = "Harbours360 API"
     APP_VERSION: str = "1.1.0"
     ENVIRONMENT: str = "development"
     DEBUG: bool = False
@@ -36,8 +36,8 @@ class Settings(BaseSettings):
 
     # ── Email ─────────────────────────────────────────────────────────────────
     RESEND_API_KEY: str = ""
-    EMAIL_FROM: str = "noreply@marinexchange.africa"
-    EMAIL_FROM_NAME: str = "MarineXchange Africa"
+    EMAIL_FROM: str = "noreply@harbours360.com"
+    EMAIL_FROM_NAME: str = "Harbours360"
 
     # ── Finance rules (fixed — DB also enforces these) ────────────────────────
     DUAL_CONTROL_THRESHOLD_USD: float = 100_000.0

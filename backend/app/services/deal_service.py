@@ -1917,9 +1917,9 @@ async def send_manual_reminder(
         <p><strong>Amount Due:</strong> {deal['currency']} {enriched.get('initial_payment_due') or deal['total_price']}</p>
         {custom_line}
         <p>Please contact us if you have any questions.</p>
-        <br/><p><strong>MarineXchange Africa Finance Team</strong></p>
+        <br/><p><strong>Harbours360 Finance Team</strong></p>
         """
-        sms_body = f"MarineXchange: {body_intro} Deal {deal_ref}. Amount: {deal['currency']} {enriched.get('initial_payment_due') or deal['total_price']}. Ref: {deal_ref}."
+        sms_body = f"Harbours360: {body_intro} Deal {deal_ref}. Amount: {deal['currency']} {enriched.get('initial_payment_due') or deal['total_price']}. Ref: {deal_ref}."
         if custom_message:
             sms_body += f" {custom_message}"
 

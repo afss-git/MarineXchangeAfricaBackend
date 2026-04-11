@@ -260,7 +260,7 @@ async def create_agent(
         country=payload.country,
         roles=[payload.agent_type],
         created_by=UUID(str(current_user["id"])),
-        invited_by_name=current_user.get("full_name") or "MarineXchange Admin",
+        invited_by_name=current_user.get("full_name") or "Harbours360 Admin",
         request=request,
     )
 
@@ -308,7 +308,7 @@ async def create_admin_user(
         country=payload.country,
         roles=[payload.role],
         created_by=UUID(str(current_user["id"])),
-        invited_by_name=current_user.get("full_name") or "MarineXchange Admin",
+        invited_by_name=current_user.get("full_name") or "Harbours360 Admin",
         request=request,
     )
 

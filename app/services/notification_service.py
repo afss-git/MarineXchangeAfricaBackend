@@ -106,7 +106,7 @@ async def send_deal_otp(buyer_email: str, buyer_phone: str | None, buyer_name: s
         <p>This code expires in <strong>10 minutes</strong>.</p>
         <p>If you did not request this, please contact support immediately.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa</strong></p>
+        <p>Best regards,<br/><strong>Harbours360</strong></p>
         """,
         tags=[{"name": "category", "value": "deal_otp"}],
     )
@@ -114,7 +114,7 @@ async def send_deal_otp(buyer_email: str, buyer_phone: str | None, buyer_name: s
     if buyer_phone:
         await _send_sms(
             to=buyer_phone,
-            body=f"MarineXchange: Your deal confirmation code for {deal_ref} is {otp}. Expires in 10 mins. Do not share.",
+            body=f"Harbours360: Your deal confirmation code for {deal_ref} is {otp}. Expires in 10 mins. Do not share.",
         )
 
 
@@ -134,7 +134,7 @@ async def send_deal_offer_notification(
     deal_type_label = "Full Payment" if deal_type == "full_payment" else "Finance Facility"
     await _send(
         to=buyer_email,
-        subject=f"Deal Offer Ready — {deal_ref} | MarineXchange Africa",
+        subject=f"Deal Offer Ready — {deal_ref} | Harbours360",
         html=f"""
         <p>Dear {buyer_name},</p>
         <p>A deal offer has been prepared for your review.</p>
@@ -148,16 +148,16 @@ async def send_deal_offer_notification(
         <p>Please review the full terms and confirm your acceptance via the link below:</p>
         <p><a href="{portal_link}" style="background:#1a56db;color:white;padding:12px 24px;text-decoration:none;border-radius:4px;display:inline-block;">Review Deal Offer</a></p>
         <p style="color:#888;font-size:12px;">This link expires in {portal_expires_hours} hours. If expired, contact your account manager.</p>
-        <p>All payments are made directly to MarineXchange Africa. Do not make any payment to the seller.</p>
+        <p>All payments are made directly to Harbours360. Do not make any payment to the seller.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Deals Team</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Deals Team</strong></p>
         """,
         tags=[{"name": "category", "value": "deal_offer"}],
     )
     if buyer_phone:
         await _send_sms(
             to=buyer_phone,
-            body=f"MarineXchange: Deal offer {deal_ref} for {product_title} ({currency} {total_price}) is ready. Check your email to review and confirm.",
+            body=f"Harbours360: Deal offer {deal_ref} for {product_title} ({currency} {total_price}) is ready. Check your email to review and confirm.",
         )
 
 
@@ -180,7 +180,7 @@ async def send_deal_accepted_admin_notification(
             <strong>Amount:</strong> {currency} {total_price}</p>
             <p>The buyer has been sent payment instructions. Please monitor for payment confirmation.</p>
             <br/>
-            <p><strong>MarineXchange Africa — Deals System</strong></p>
+            <p><strong>Harbours360 — Deals System</strong></p>
             """,
             tags=[{"name": "category", "value": "deal_accepted_admin"}],
         )
@@ -210,7 +210,7 @@ async def send_payment_instructions_notification(
 
     await _send(
         to=buyer_email,
-        subject=f"Payment Instructions — {deal_ref} | MarineXchange Africa",
+        subject=f"Payment Instructions — {deal_ref} | Harbours360",
         html=f"""
         <p>Dear {buyer_name},</p>
         <p>Thank you for confirming deal <strong>{deal_ref}</strong>. Please make your payment using the details below.</p>
@@ -228,14 +228,14 @@ async def send_payment_instructions_notification(
         <p style="color:#c00;font-weight:bold;">&#9888; Important: Always use the reference code <strong>{payment_reference}</strong> when making your payment. Payments without the reference code may be delayed.</p>
         <p>Once payment is made, our team will confirm receipt within 1&#8211;2 business days.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Finance Team</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Finance Team</strong></p>
         """,
         tags=[{"name": "category", "value": "payment_instructions"}],
     )
     if buyer_phone:
         await _send_sms(
             to=buyer_phone,
-            body=f"MarineXchange: Payment instructions for deal {deal_ref} sent to your email. Amount: {currency} {amount_due}. Reference: {payment_reference}. Pay to {bank_name}.",
+            body=f"Harbours360: Payment instructions for deal {deal_ref} sent to your email. Amount: {currency} {amount_due}. Reference: {payment_reference}. Pay to {bank_name}.",
         )
 
 
@@ -266,14 +266,14 @@ async def send_payment_recorded_notification(
         <p>Our finance team is verifying the payment. You will be notified once confirmed.</p>
         <p>Typical verification time is <strong>1 business day</strong>.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Finance Team</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Finance Team</strong></p>
         """,
         tags=[{"name": "category", "value": "payment_recorded"}],
     )
     if buyer_phone:
         await _send_sms(
             to=buyer_phone,
-            body=f"MarineXchange: Your {desc} of {currency} {amount} for deal {deal_ref} has been received and is under verification.",
+            body=f"Harbours360: Your {desc} of {currency} {amount} for deal {deal_ref} has been received and is under verification.",
         )
 
 
@@ -289,22 +289,22 @@ async def send_deal_completed_notification(
     """Sent to buyer when full payment deal is completed."""
     await _send(
         to=buyer_email,
-        subject=f"Deal Completed — {deal_ref} | MarineXchange Africa",
+        subject=f"Deal Completed — {deal_ref} | Harbours360",
         html=f"""
         <p>Dear {buyer_name},</p>
         <p>Congratulations! Deal <strong>{deal_ref}</strong> for <strong>{product_title}</strong> has been successfully completed.</p>
         <p><strong>Total Amount:</strong> {currency} {total_price}</p>
         <p>Our team will coordinate with the seller for the next steps regarding asset handover.</p>
         <br/>
-        <p>Thank you for transacting with MarineXchange Africa.</p>
-        <p>Best regards,<br/><strong>MarineXchange Africa</strong></p>
+        <p>Thank you for transacting with Harbours360.</p>
+        <p>Best regards,<br/><strong>Harbours360</strong></p>
         """,
         tags=[{"name": "category", "value": "deal_completed"}],
     )
     if buyer_phone:
         await _send_sms(
             to=buyer_phone,
-            body=f"MarineXchange: Deal {deal_ref} for {product_title} is COMPLETED. Payment verified. Handover arrangements will follow.",
+            body=f"Harbours360: Deal {deal_ref} for {product_title} is COMPLETED. Payment verified. Handover arrangements will follow.",
         )
 
 
@@ -323,7 +323,7 @@ async def send_financing_activated_notification(
     """Sent when initial payment verified and financing goes active."""
     await _send(
         to=buyer_email,
-        subject=f"Finance Facility Activated — {deal_ref} | MarineXchange Africa",
+        subject=f"Finance Facility Activated — {deal_ref} | Harbours360",
         html=f"""
         <p>Dear {buyer_name},</p>
         <p>Your Finance Facility for deal <strong>{deal_ref}</strong> is now <strong>active</strong>.</p>
@@ -338,14 +338,14 @@ async def send_financing_activated_notification(
         <p>Your repayment schedule is available in your account dashboard.</p>
         <p>Monthly payment reminders will be sent 5 days before each due date.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Finance Team</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Finance Team</strong></p>
         """,
         tags=[{"name": "category", "value": "financing_activated"}],
     )
     if buyer_phone:
         await _send_sms(
             to=buyer_phone,
-            body=f"MarineXchange: Finance Facility {deal_ref} is ACTIVE. Monthly payment: {currency} {monthly_payment}. First due: {first_due_date}. Check your email for details.",
+            body=f"Harbours360: Finance Facility {deal_ref} is ACTIVE. Monthly payment: {currency} {monthly_payment}. First due: {first_due_date}. Check your email for details.",
         )
 
 
@@ -378,14 +378,14 @@ async def send_installment_reminder_notification(
         </div>
         <p>Please ensure your payment includes the reference code.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Finance Team</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Finance Team</strong></p>
         """,
         tags=[{"name": "category", "value": "installment_reminder"}],
     )
     if buyer_phone:
         await _send_sms(
             to=buyer_phone,
-            body=f"MarineXchange: Reminder — Installment #{installment_number} for {deal_ref} of {currency} {amount_due} is due on {due_date}. Ref: {payment_reference}.",
+            body=f"Harbours360: Reminder — Installment #{installment_number} for {deal_ref} of {currency} {amount_due} is due on {due_date}. Ref: {payment_reference}.",
         )
 
 
@@ -413,14 +413,14 @@ async def send_installment_overdue_notification(
         </div>
         <p>Please make payment immediately to avoid further action. Contact our finance team if you are experiencing difficulties.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Finance Team</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Finance Team</strong></p>
         """,
         tags=[{"name": "category", "value": "installment_overdue"}],
     )
     if buyer_phone:
         await _send_sms(
             to=buyer_phone,
-            body=f"URGENT — MarineXchange: Installment #{installment_number} for {deal_ref} ({currency} {amount_due}) is {days_overdue} day(s) overdue. Please pay immediately.",
+            body=f"URGENT — Harbours360: Installment #{installment_number} for {deal_ref} ({currency} {amount_due}) is {days_overdue} day(s) overdue. Please pay immediately.",
         )
 
 
@@ -430,7 +430,7 @@ async def send_kyc_submitted(buyer_email: str, buyer_name: str) -> None:
     """Sent to buyer when they submit their KYC documents for review."""
     await _send(
         to=buyer_email,
-        subject="KYC Documents Received — MarineXchange Africa",
+        subject="KYC Documents Received — Harbours360",
         html=f"""
         <p>Dear {buyer_name},</p>
         <p>We have successfully received your KYC documents. Our verification team will
@@ -438,7 +438,7 @@ async def send_kyc_submitted(buyer_email: str, buyer_name: str) -> None:
         <p>Typical review time is <strong>2–3 business days</strong>.</p>
         <p>If you have any questions, please contact our support team.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Verification Team</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Verification Team</strong></p>
         """,
         tags=[{"name": "category", "value": "kyc_submitted"}],
     )
@@ -448,14 +448,14 @@ async def send_kyc_under_review(buyer_email: str, buyer_name: str) -> None:
     """Sent to buyer when a verification agent is assigned to their submission."""
     await _send(
         to=buyer_email,
-        subject="KYC Review Started — MarineXchange Africa",
+        subject="KYC Review Started — Harbours360",
         html=f"""
         <p>Dear {buyer_name},</p>
         <p>A verification agent has been assigned to your KYC application and has begun
         their review. You will be notified once a decision has been made.</p>
         <p>Please do not resubmit documents at this time.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Verification Team</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Verification Team</strong></p>
         """,
         tags=[{"name": "category", "value": "kyc_under_review"}],
     )
@@ -465,16 +465,16 @@ async def send_kyc_approved(buyer_email: str, buyer_name: str, expires_at: str) 
     """Sent to buyer when admin approves their KYC."""
     await _send(
         to=buyer_email,
-        subject="KYC Approved — You Can Now Transact on MarineXchange Africa",
+        subject="KYC Approved — You Can Now Transact on Harbours360",
         html=f"""
         <p>Dear {buyer_name},</p>
         <p>Congratulations! Your identity verification (KYC) has been <strong>approved</strong>.
         You can now submit purchase requests and participate in transactions on
-        MarineXchange Africa.</p>
+        Harbours360.</p>
         <p><strong>Your KYC approval is valid until: {expires_at}</strong></p>
         <p>You will receive a reminder 30 days before expiry.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Verification Team</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Verification Team</strong></p>
         """,
         tags=[{"name": "category", "value": "kyc_approved"}],
     )
@@ -489,14 +489,14 @@ async def send_kyc_rejected(buyer_email: str, buyer_name: str, reason: str | Non
     )
     await _send(
         to=buyer_email,
-        subject="KYC Verification Unsuccessful — MarineXchange Africa",
+        subject="KYC Verification Unsuccessful — Harbours360",
         html=f"""
         <p>Dear {buyer_name},</p>
         <p>We were unable to complete your KYC verification.</p>
         {reason_text}
         <p>If you believe this is in error, please contact our support team.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Verification Team</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Verification Team</strong></p>
         """,
         tags=[{"name": "category", "value": "kyc_rejected"}],
     )
@@ -514,16 +514,16 @@ async def send_kyc_requires_resubmission(
     )
     await _send(
         to=buyer_email,
-        subject="KYC Resubmission Required — MarineXchange Africa",
+        subject="KYC Resubmission Required — Harbours360",
         html=f"""
         <p>Dear {buyer_name},</p>
         <p>After reviewing your KYC submission, our team requires you to provide
         updated or additional documents before we can proceed.</p>
         {reason_text}
-        <p>Please log in to your MarineXchange Africa account and submit a new
+        <p>Please log in to your Harbours360 account and submit a new
         KYC application with the requested documents.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Verification Team</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Verification Team</strong></p>
         """,
         tags=[{"name": "category", "value": "kyc_resubmission"}],
     )
@@ -538,15 +538,15 @@ async def send_kyc_expiry_warning(
     """Sent by a scheduled job 30 days and 7 days before KYC expires."""
     await _send(
         to=buyer_email,
-        subject=f"KYC Expiring in {days_remaining} Days — MarineXchange Africa",
+        subject=f"KYC Expiring in {days_remaining} Days — Harbours360",
         html=f"""
         <p>Dear {buyer_name},</p>
         <p>Your KYC approval will expire on <strong>{expires_at}</strong>
         ({days_remaining} days from now).</p>
-        <p>To continue transacting on MarineXchange Africa without interruption,
+        <p>To continue transacting on Harbours360 without interruption,
         please submit a new KYC application before the expiry date.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Verification Team</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Verification Team</strong></p>
         """,
         tags=[{"name": "category", "value": "kyc_expiry_warning"}],
     )
@@ -562,16 +562,16 @@ async def send_document_request(
 
     await _send(
         to=buyer_email,
-        subject="Documents Requested — MarineXchange Africa KYC",
+        subject="Documents Requested — Harbours360 KYC",
         html=f"""
         <p>Dear {buyer_name},</p>
         <p>Our verification team has requested the following documents
         to complete your KYC review:</p>
         <ul>{doc_list}</ul>
-        <p>Please log in to your MarineXchange Africa account and upload the
+        <p>Please log in to your Harbours360 account and upload the
         requested documents at your earliest convenience.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Verification Team</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Verification Team</strong></p>
         """,
         tags=[{"name": "category", "value": "kyc_document_request"}],
     )
@@ -618,9 +618,9 @@ async def send_document_verification_update(
             <p>{headline}</p>
             {body}
             {notes_html}
-            <p>Log in to your MarineXchange Africa account to view the full status of your verification.</p>
+            <p>Log in to your Harbours360 account to view the full status of your verification.</p>
             <br/>
-            <p>Best regards,<br/><strong>MarineXchange Africa Verification Team</strong></p>
+            <p>Best regards,<br/><strong>Harbours360 Verification Team</strong></p>
           </div>
         </div>
         """,
@@ -645,7 +645,7 @@ async def send_staff_welcome(
     """
     # If invite_link looks like a URL, show it as a clickable button
     # If it's the temp password (fallback), show login link instead
-    login_url = f"https://marine-xchange-africa-fronend.vercel.app/login"
+    login_url = f"https://harbours360.com/login"
     if invite_link.startswith("http"):
         link_section = f"""
         <p style="margin-top:16px;">Or click below to set your own password (link expires in 24 hours):</p>
@@ -670,11 +670,11 @@ async def send_staff_welcome(
 
     return await _send(
         to=staff_email,
-        subject="You've been invited to MarineXchange Africa",
+        subject="You've been invited to Harbours360",
         html=f"""
         <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;">
         <p>Dear {staff_name},</p>
-        <p>You have been invited to join <strong>MarineXchange Africa</strong> as a
+        <p>You have been invited to join <strong>Harbours360</strong> as a
         <strong>{role_label}</strong> by {invited_by_name}.</p>
         <p>Your temporary login credentials are below. Please log in and change your password after first login.</p>
         <table style="width:100%;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;border-spacing:0;margin:20px 0;">
@@ -689,7 +689,7 @@ async def send_staff_welcome(
         </table>
         {link_section}
         <p style="color:#6b7280;font-size:13px;">If you did not expect this invitation, please ignore this email.</p>
-        <p>Best regards,<br/><strong>MarineXchange Africa</strong></p>
+        <p>Best regards,<br/><strong>Harbours360</strong></p>
         </div>
         """,
         tags=[{"name": "category", "value": "staff_invite"}],
@@ -711,7 +711,7 @@ async def notify_admin_new_purchase_request(
     purchase_type_label = "Direct Purchase" if purchase_type == "direct_purchase" else "Financed Purchase"
     await _send(
         to=settings.ADMIN_EMAIL,
-        subject=f"New Purchase Request — {product_title} | MarineXchange Africa",
+        subject=f"New Purchase Request — {product_title} | Harbours360",
         html=f"""
         <p>A new purchase request has been submitted and requires your attention.</p>
         <table style="border-collapse:collapse;width:100%;max-width:500px;">
@@ -722,7 +722,7 @@ async def notify_admin_new_purchase_request(
         </table>
         <br/>
         <p>Please log in to the admin dashboard to review and assign a buyer agent.</p>
-        <p><strong>MarineXchange Africa — Admin System</strong></p>
+        <p><strong>Harbours360 — Admin System</strong></p>
         """,
         tags=[{"name": "category", "value": "purchase_request_new"}],
     )
@@ -736,7 +736,7 @@ async def notify_agent_assigned_request(
     """Notify a buyer agent when a purchase request is assigned to them."""
     await _send(
         to=agent_email,
-        subject="New Purchase Request Assigned — MarineXchange Africa",
+        subject="New Purchase Request Assigned — Harbours360",
         html=f"""
         <p>Dear {agent_name},</p>
         <p>A new purchase request has been assigned to you for due diligence review.</p>
@@ -744,7 +744,7 @@ async def notify_agent_assigned_request(
         <p>Please log in to your dashboard to view the full details and begin your review.</p>
         <p>Once your assessment is complete, submit your structured report via the portal.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa</strong></p>
+        <p>Best regards,<br/><strong>Harbours360</strong></p>
         """,
         tags=[{"name": "category", "value": "purchase_request_agent_assigned"}],
     )
@@ -759,7 +759,7 @@ async def notify_buyer_request_approved(
     """Notify buyer when their purchase request has been approved."""
     await _send(
         to=buyer_email,
-        subject="Purchase Request Approved — MarineXchange Africa",
+        subject="Purchase Request Approved — Harbours360",
         html=f"""
         <p>Dear {buyer_name},</p>
         <p>Great news! Your purchase request has been <strong>approved</strong> by our team.</p>
@@ -767,14 +767,14 @@ async def notify_buyer_request_approved(
         <p>Our team is now preparing a formal deal offer for you. You will receive a separate
         notification with the full deal terms and a secure link to review and confirm.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa</strong></p>
+        <p>Best regards,<br/><strong>Harbours360</strong></p>
         """,
         tags=[{"name": "category", "value": "purchase_request_approved"}],
     )
     if buyer_phone:
         await _send_sms(
             to=buyer_phone,
-            body=f"MarineXchange: Your purchase request has been APPROVED. We are preparing your deal offer. Check your email for details.",
+            body=f"Harbours360: Your purchase request has been APPROVED. We are preparing your deal offer. Check your email for details.",
         )
 
 
@@ -788,7 +788,7 @@ async def notify_buyer_request_rejected(
     """Notify buyer when their purchase request has been rejected."""
     await _send(
         to=buyer_email,
-        subject="Purchase Request Unsuccessful — MarineXchange Africa",
+        subject="Purchase Request Unsuccessful — Harbours360",
         html=f"""
         <p>Dear {buyer_name},</p>
         <p>Unfortunately, your purchase request has not been approved at this time.</p>
@@ -797,14 +797,14 @@ async def notify_buyer_request_rejected(
         <p>If you have questions or believe this decision should be reviewed,
         please contact our support team.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa</strong></p>
+        <p>Best regards,<br/><strong>Harbours360</strong></p>
         """,
         tags=[{"name": "category", "value": "purchase_request_rejected"}],
     )
     if buyer_phone:
         await _send_sms(
             to=buyer_phone,
-            body=f"MarineXchange: Your purchase request was not approved at this time. Please check your email for details.",
+            body=f"Harbours360: Your purchase request was not approved at this time. Please check your email for details.",
         )
 
 
@@ -817,7 +817,7 @@ async def notify_buyer_request_converted(
     """Notify buyer when their approved request has been converted to a deal."""
     await _send(
         to=buyer_email,
-        subject=f"Deal Being Prepared — {deal_ref} | MarineXchange Africa",
+        subject=f"Deal Being Prepared — {deal_ref} | Harbours360",
         html=f"""
         <p>Dear {buyer_name},</p>
         <p>Your purchase request has progressed to a <strong>formal deal</strong>.</p>
@@ -826,14 +826,14 @@ async def notify_buyer_request_converted(
         with a secure portal link to review, accept, and proceed with payment once ready.</p>
         <p>No action is required from you at this stage.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Deals Team</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Deals Team</strong></p>
         """,
         tags=[{"name": "category", "value": "purchase_request_converted"}],
     )
     if buyer_phone:
         await _send_sms(
             to=buyer_phone,
-            body=f"MarineXchange: Your purchase request has progressed to Deal {deal_ref}. Watch for your formal deal offer via email.",
+            body=f"Harbours360: Your purchase request has progressed to Deal {deal_ref}. Watch for your formal deal offer via email.",
         )
 
 
@@ -847,7 +847,7 @@ async def notify_buyer_deal_expired(
     """Sent by scheduler when a deal offer expires without buyer response."""
     await _send(
         to=buyer_email,
-        subject=f"Deal Offer Expired — {deal_ref} | MarineXchange Africa",
+        subject=f"Deal Offer Expired — {deal_ref} | Harbours360",
         html=f"""
         <p>Dear {buyer_name},</p>
         <p>The deal offer for <strong>{deal_ref}</strong> has expired because it was not
@@ -855,7 +855,7 @@ async def notify_buyer_deal_expired(
         <p>If you are still interested in this asset, please contact your account manager
         to discuss next steps.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Deals Team</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Deals Team</strong></p>
         """,
         tags=[{"name": "category", "value": "deal_expired"}],
     )
@@ -876,7 +876,7 @@ async def notify_outbid(
     """Sent to the previous highest bidder when they are outbid."""
     await _send(
         to=buyer_email,
-        subject=f"You've Been Outbid — {auction_title} | MarineXchange Africa",
+        subject=f"You've Been Outbid — {auction_title} | Harbours360",
         html=f"""
         <p>Dear {buyer_name},</p>
         <p>You have been outbid on <strong>{auction_title}</strong>.</p>
@@ -887,14 +887,14 @@ async def notify_outbid(
         </div>
         <p>Log in to place a higher bid before the auction closes.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Auctions</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Auctions</strong></p>
         """,
         tags=[{"name": "category", "value": "auction_outbid"}],
     )
     if buyer_phone:
         await _send_sms(
             to=buyer_phone,
-            body=f"MarineXchange: You've been outbid on '{auction_title}'. New highest bid: {currency} {new_bid}. Closes: {end_time}. Log in to bid again.",
+            body=f"Harbours360: You've been outbid on '{auction_title}'. New highest bid: {currency} {new_bid}. Closes: {end_time}. Log in to bid again.",
         )
 
 
@@ -909,7 +909,7 @@ async def notify_auction_ending_soon(
     """Sent to all active bidders ~1 hour before auction closes."""
     await _send(
         to=buyer_email,
-        subject=f"Ending in 1 Hour — {auction_title} | MarineXchange Africa",
+        subject=f"Ending in 1 Hour — {auction_title} | Harbours360",
         html=f"""
         <p>Dear {buyer_name},</p>
         <p>The auction for <strong>{auction_title}</strong> closes in approximately
@@ -920,7 +920,7 @@ async def notify_auction_ending_soon(
         </div>
         <p>Log in now to place your final bid.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Auctions</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Auctions</strong></p>
         """,
         tags=[{"name": "category", "value": "auction_ending_soon"}],
     )
@@ -948,14 +948,14 @@ async def notify_auction_winner_pending(
         <strong>1–2 business days</strong> once the result is confirmed.</p>
         <p>No action is required from you at this stage.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Auctions</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Auctions</strong></p>
         """,
         tags=[{"name": "category", "value": "auction_winner_pending"}],
     )
     if winner_phone:
         await _send_sms(
             to=winner_phone,
-            body=f"MarineXchange: You have the highest bid ({currency} {winning_bid}) on '{auction_title}'. Your bid is under admin review. We'll notify you of the outcome.",
+            body=f"Harbours360: You have the highest bid ({currency} {winning_bid}) on '{auction_title}'. Your bid is under admin review. We'll notify you of the outcome.",
         )
 
 
@@ -981,14 +981,14 @@ async def notify_auction_winner_approved(
         <p>Our team is now preparing your formal deal offer. You will receive a secure
         deal portal link to review and confirm the final terms.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Auctions</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Auctions</strong></p>
         """,
         tags=[{"name": "category", "value": "auction_winner_approved"}],
     )
     if winner_phone:
         await _send_sms(
             to=winner_phone,
-            body=f"MarineXchange: Your bid of {currency} {winning_bid} on '{auction_title}' has been APPROVED. Deal offer coming soon — check your email.",
+            body=f"Harbours360: Your bid of {currency} {winning_bid} on '{auction_title}' has been APPROVED. Deal offer coming soon — check your email.",
         )
 
 
@@ -1001,7 +1001,7 @@ async def notify_auction_winner_rejected(
     """Sent to winner when admin rejects the auction result."""
     await _send(
         to=winner_email,
-        subject=f"Auction Result Unsuccessful — {auction_title} | MarineXchange Africa",
+        subject=f"Auction Result Unsuccessful — {auction_title} | Harbours360",
         html=f"""
         <p>Dear {winner_name},</p>
         <p>Unfortunately, your winning bid for <strong>{auction_title}</strong> could not
@@ -1010,7 +1010,7 @@ async def notify_auction_winner_rejected(
         <p>If you believe this is an error or would like to discuss further,
         please contact our support team.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Auctions</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Auctions</strong></p>
         """,
         tags=[{"name": "category", "value": "auction_winner_rejected"}],
     )
@@ -1032,14 +1032,14 @@ async def notify_auction_bid_lost(
 
     await _send(
         to=buyer_email,
-        subject=f"Auction Closed — {auction_title} | MarineXchange Africa",
+        subject=f"Auction Closed — {auction_title} | Harbours360",
         html=f"""
         <p>Dear {buyer_name},</p>
         <p>The auction for <strong>{auction_title}</strong> has now closed.</p>
         <p>{body_text}</p>
         <p>Browse our marketplace for other available assets.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Auctions</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Auctions</strong></p>
         """,
         tags=[{"name": "category", "value": "auction_bid_lost"}],
     )
@@ -1081,7 +1081,7 @@ async def notify_admin_payment_submitted(deal_id: Any, record_id: str) -> None:
 
         await _send(
             to=admin_email,
-            subject=f"Payment Evidence Submitted — Deal {row['deal_ref']} | MarineXchange",
+            subject=f"Payment Evidence Submitted — Deal {row['deal_ref']} | Harbours360",
             html=f"""
             <p>A buyer has submitted a payment record for your review.</p>
             <p><strong>Deal:</strong> {row['deal_ref']}</p>
@@ -1089,7 +1089,7 @@ async def notify_admin_payment_submitted(deal_id: Any, record_id: str) -> None:
             <p><strong>Payment Record ID:</strong> {record_id}</p>
             <p>Please log in to the admin portal to verify or reject this payment.</p>
             <br/>
-            <p><strong>MarineXchange Africa Finance Team</strong></p>
+            <p><strong>Harbours360 Finance Team</strong></p>
             """,
             tags=[{"name": "category", "value": "payment_submitted"}],
         )
@@ -1122,7 +1122,7 @@ async def notify_payment_rejected(deal_id: Any, buyer_id: Any, reason: str) -> N
 
         await _send(
             to=row["buyer_email"],
-            subject=f"Payment Record Rejected — Deal {row['deal_ref']} | MarineXchange Africa",
+            subject=f"Payment Record Rejected — Deal {row['deal_ref']} | Harbours360",
             html=f"""
             <p>Dear {row['buyer_name']},</p>
             <p>Your payment record for deal <strong>{row['deal_ref']}</strong>
@@ -1132,7 +1132,7 @@ async def notify_payment_rejected(deal_id: Any, buyer_id: Any, reason: str) -> N
             with valid evidence.</p>
             <p>If you believe this is an error, please contact our support team.</p>
             <br/>
-            <p>Best regards,<br/><strong>MarineXchange Africa Finance Team</strong></p>
+            <p>Best regards,<br/><strong>Harbours360 Finance Team</strong></p>
             """,
             tags=[{"name": "category", "value": "payment_rejected"}],
         )
@@ -1175,15 +1175,15 @@ async def notify_deal_completed(deal_id: Any) -> None:
         # Notify buyer
         await _send(
             to=row["buyer_email"],
-            subject=f"Deal Completed — {row['deal_ref']} | MarineXchange Africa",
+            subject=f"Deal Completed — {row['deal_ref']} | Harbours360",
             html=f"""
             <p>Dear {row['buyer_name']},</p>
             <p>Congratulations! All payments for deal <strong>{row['deal_ref']}</strong>
             have been verified. Your deal is now <strong>completed</strong>.</p>
             <p><strong>Total paid:</strong> {row['currency']} {row['total_price']}</p>
-            <p>Thank you for transacting on MarineXchange Africa.</p>
+            <p>Thank you for transacting on Harbours360.</p>
             <br/>
-            <p>Best regards,<br/><strong>MarineXchange Africa</strong></p>
+            <p>Best regards,<br/><strong>Harbours360</strong></p>
             """,
             tags=[{"name": "category", "value": "deal_completed"}],
         )
@@ -1191,15 +1191,15 @@ async def notify_deal_completed(deal_id: Any) -> None:
         # Notify seller
         await _send(
             to=row["seller_email"],
-            subject=f"Deal Completed — {row['deal_ref']} | MarineXchange Africa",
+            subject=f"Deal Completed — {row['deal_ref']} | Harbours360",
             html=f"""
             <p>Dear {row['seller_name']},</p>
             <p>All payments for deal <strong>{row['deal_ref']}</strong> have been verified.
             The deal is now <strong>completed</strong>.</p>
             <p><strong>Total received:</strong> {row['currency']} {row['total_price']}</p>
-            <p>Thank you for listing on MarineXchange Africa.</p>
+            <p>Thank you for listing on Harbours360.</p>
             <br/>
-            <p>Best regards,<br/><strong>MarineXchange Africa</strong></p>
+            <p>Best regards,<br/><strong>Harbours360</strong></p>
             """,
             tags=[{"name": "category", "value": "deal_completed"}],
         )
@@ -1217,7 +1217,7 @@ async def notify_installment_overdue(
     """Sent by scheduler when a schedule item becomes overdue."""
     await _send(
         to=buyer_email,
-        subject=f"Payment Overdue — {deal_ref} | MarineXchange Africa",
+        subject=f"Payment Overdue — {deal_ref} | Harbours360",
         html=f"""
         <p>Dear {buyer_name},</p>
         <p>Your payment for <strong>{installment_label}</strong> on deal
@@ -1228,7 +1228,7 @@ async def notify_installment_overdue(
         <p>If you have already paid, please ensure you have uploaded valid
         evidence through your buyer portal.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa Finance Team</strong></p>
+        <p>Best regards,<br/><strong>Harbours360 Finance Team</strong></p>
         """,
         tags=[{"name": "category", "value": "installment_overdue"}],
     )
@@ -1281,13 +1281,13 @@ async def notify_document_shared(deal_id: Any, document_id: str, document_type: 
         for deal <strong>{deal_ref}</strong>.</p>
         <p>Please log in to your deal portal to view and acknowledge the document.</p>
         <br/>
-        <p>Best regards,<br/><strong>MarineXchange Africa</strong></p>
+        <p>Best regards,<br/><strong>Harbours360</strong></p>
         """
 
         if row["is_visible_to_buyer"]:
             await _send(
                 to=row["buyer_email"],
-                subject=f"New Document Available — {deal_ref} | MarineXchange Africa",
+                subject=f"New Document Available — {deal_ref} | Harbours360",
                 html=html_template(row["buyer_name"]),
                 tags=[{"name": "category", "value": "document_shared"}],
             )
@@ -1295,7 +1295,7 @@ async def notify_document_shared(deal_id: Any, document_id: str, document_type: 
         if row["is_visible_to_seller"]:
             await _send(
                 to=row["seller_email"],
-                subject=f"New Document Available — {deal_ref} | MarineXchange Africa",
+                subject=f"New Document Available — {deal_ref} | Harbours360",
                 html=html_template(row["seller_name"]),
                 tags=[{"name": "category", "value": "document_shared"}],
             )
@@ -1330,7 +1330,7 @@ async def notify_invoice_issued(deal_id: Any, invoice_id: str, invoice_ref: str)
 
         await _send(
             to=row["buyer_email"],
-            subject=f"Invoice Issued — {invoice_ref} | {row['deal_ref']} | MarineXchange Africa",
+            subject=f"Invoice Issued — {invoice_ref} | {row['deal_ref']} | Harbours360",
             html=f"""
             <p>Dear {row['buyer_name']},</p>
             <p>An invoice (<strong>{invoice_ref}</strong>) has been issued for
@@ -1339,7 +1339,7 @@ async def notify_invoice_issued(deal_id: Any, invoice_id: str, invoice_ref: str)
             <p>If you have any questions about this invoice, please contact our
             finance team.</p>
             <br/>
-            <p>Best regards,<br/><strong>MarineXchange Africa Finance Team</strong></p>
+            <p>Best regards,<br/><strong>Harbours360 Finance Team</strong></p>
             """,
             tags=[{"name": "category", "value": "invoice_issued"}],
         )
