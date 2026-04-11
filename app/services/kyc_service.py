@@ -977,13 +977,7 @@ async def submit_agent_review(
                 ),
             )
 
-    # Agents cannot approve — only admin can approve
     reviewer_role = "admin" if is_admin else "buyer_agent"
-    if reviewer_role == "buyer_agent" and payload.recommendation == "approve":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Agents cannot approve KYC directly. Submit your recommendation and the admin will make the final decision.",
-        )
 
     async with db.transaction():
         review = await db.fetchrow(
