@@ -436,6 +436,25 @@ async def admin_list_requests(
         *params,
     )
 
+    # Batch: load primary image storage_path for each product to avoid N+1
+    product_ids = list({row["product_id"] for row in rows if row.get("product_id")})
+    img_map: dict = {}
+    if product_ids:
+        img_rows = await db.fetch(
+            """
+            SELECT DISTINCT ON (product_id)
+                product_id, storage_path
+            FROM marketplace.product_images
+            WHERE product_id = ANY($1)
+            ORDER BY product_id, is_primary DESC, display_order ASC
+            """,
+            product_ids,
+        )
+        for img_row in img_rows:
+            signed = await _signed_image_url(img_row["storage_path"])
+            if signed:
+                img_map[img_row["product_id"]] = signed
+
     # Batch: load latest assignment per request to avoid N+1
     request_ids = [row["id"] for row in rows]
     asgn_rows = await db.fetch(
@@ -474,7 +493,7 @@ async def admin_list_requests(
             product_availability_type=row.get("product_availability_type"),
             product_location_country=row.get("product_location_country"),
             product_location_port=row.get("product_location_port"),
-            product_primary_image_url=None,  # not fetched in list — loaded on expand
+            product_primary_image_url=img_map.get(row["product_id"]),
             seller_company=row.get("seller_company"),
             buyer_id=row["buyer_id"],
             buyer_name=row.get("buyer_name"),

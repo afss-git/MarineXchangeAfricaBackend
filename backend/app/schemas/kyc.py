@@ -265,11 +265,12 @@ class KycAgentReviewRequest(BaseModel):
     """
     model_config = {"extra": "forbid"}
 
-    assessment:         str  = Field(min_length=20, max_length=10_000)
+    assessment:         str  = Field(min_length=10, max_length=10_000)
     risk_score:         str
     is_pep:             bool = False
     sanctions_match:    bool = False
     recommendation:     str
+    notes:              str | None = Field(default=None, max_length=2000)
 
     @field_validator("risk_score")
     @classmethod
