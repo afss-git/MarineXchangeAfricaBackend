@@ -667,7 +667,7 @@ async def submit_kyc(db: asyncpg.Connection, actor: dict) -> dict:
         await db.execute(
             """
             UPDATE kyc.submissions
-            SET status = 'submitted', locked_at = $2, submitted_at = $2, updated_at = $2
+            SET status = 'submitted', submitted_at = $2, updated_at = $2
             WHERE id = $1
             """,
             sub_id, now,

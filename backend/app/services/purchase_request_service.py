@@ -904,6 +904,57 @@ async def convert_to_deal(
 # BUYER AGENT OPERATIONS
 # ══════════════════════════════════════════════════════════════════════════════
 
+async def _build_agent_assigned_request(
+    db: asyncpg.Connection,
+    r: asyncpg.Record,
+    agent_id: UUID,
+) -> AgentAssignedRequest:
+    """Enrich one row with product image and buyer email."""
+    image_url: str | None = None
+    img_row = await db.fetchrow(
+        """
+        SELECT storage_path FROM marketplace.product_images
+        WHERE product_id = $1 AND is_primary = TRUE LIMIT 1
+        """,
+        r["product_id"],
+    )
+    if img_row and img_row["storage_path"]:
+        image_url = await _signed_image_url(img_row["storage_path"])
+
+    buyer_auth = await db.fetchrow(
+        "SELECT email FROM auth.users WHERE id = $1", r["buyer_id"]
+    )
+
+    return AgentAssignedRequest(
+        id=r["id"],
+        product_id=r["product_id"],
+        product_title=r.get("product_title"),
+        product_image_url=image_url,
+        product_description=r.get("product_description"),
+        product_condition=r.get("product_condition"),
+        product_asking_price=r.get("product_asking_price"),
+        product_currency=r.get("product_currency"),
+        product_location_country=r.get("product_location_country"),
+        product_location_port=r.get("product_location_port"),
+        buyer_id=r["buyer_id"],
+        buyer_name=r.get("buyer_name"),
+        buyer_email=buyer_auth["email"] if buyer_auth else None,
+        buyer_phone=r.get("buyer_phone"),
+        buyer_company=r.get("buyer_company"),
+        buyer_kyc_status=r.get("buyer_kyc_status"),
+        purchase_type=r["purchase_type"],
+        quantity=r["quantity"],
+        offered_price=r.get("offered_price"),
+        offered_currency=r["offered_currency"],
+        message=r.get("message"),
+        status=r["status"],
+        assignment_status=r.get("assignment_status"),
+        assignment_notes=r.get("assignment_notes"),
+        report_submitted=r["report_submitted"],
+        created_at=r["created_at"],
+    )
+
+
 async def agent_list_assigned(
     db: asyncpg.Connection,
     agent_id: UUID,
@@ -912,10 +963,19 @@ async def agent_list_assigned(
         """
         SELECT
             pr.*,
-            mp.title        AS product_title,
-            buyer.full_name AS buyer_name,
-            ba.status       AS assignment_status,
-            ba.notes        AS assignment_notes,
+            mp.title            AS product_title,
+            mp.description      AS product_description,
+            mp.condition        AS product_condition,
+            mp.asking_price     AS product_asking_price,
+            mp.currency         AS product_currency,
+            mp.location_country AS product_location_country,
+            mp.location_port    AS product_location_port,
+            buyer.full_name     AS buyer_name,
+            buyer.phone         AS buyer_phone,
+            buyer.company_name  AS buyer_company,
+            buyer.kyc_status    AS buyer_kyc_status,
+            ba.status           AS assignment_status,
+            ba.notes            AS assignment_notes,
             EXISTS (
                 SELECT 1 FROM marketplace.buyer_agent_reports bar
                 WHERE bar.request_id = pr.id AND bar.agent_id = $1
@@ -928,26 +988,7 @@ async def agent_list_assigned(
         """,
         agent_id,
     )
-    items = [
-        AgentAssignedRequest(
-            id=r["id"],
-            product_id=r["product_id"],
-            product_title=r.get("product_title"),
-            buyer_id=r["buyer_id"],
-            buyer_name=r.get("buyer_name"),
-            purchase_type=r["purchase_type"],
-            quantity=r["quantity"],
-            offered_price=r.get("offered_price"),
-            offered_currency=r["offered_currency"],
-            message=r.get("message"),
-            status=r["status"],
-            assignment_status=r.get("assignment_status"),
-            assignment_notes=r.get("assignment_notes"),
-            report_submitted=r["report_submitted"],
-            created_at=r["created_at"],
-        )
-        for r in rows
-    ]
+    items = [await _build_agent_assigned_request(db, r, agent_id) for r in rows]
     return AgentAssignedList(items=items, total=len(items))
 
 
@@ -960,10 +1001,19 @@ async def agent_get_request(
         """
         SELECT
             pr.*,
-            mp.title        AS product_title,
-            buyer.full_name AS buyer_name,
-            ba.status       AS assignment_status,
-            ba.notes        AS assignment_notes,
+            mp.title            AS product_title,
+            mp.description      AS product_description,
+            mp.condition        AS product_condition,
+            mp.asking_price     AS product_asking_price,
+            mp.currency         AS product_currency,
+            mp.location_country AS product_location_country,
+            mp.location_port    AS product_location_port,
+            buyer.full_name     AS buyer_name,
+            buyer.phone         AS buyer_phone,
+            buyer.company_name  AS buyer_company,
+            buyer.kyc_status    AS buyer_kyc_status,
+            ba.status           AS assignment_status,
+            ba.notes            AS assignment_notes,
             EXISTS (
                 SELECT 1 FROM marketplace.buyer_agent_reports bar
                 WHERE bar.request_id = pr.id AND bar.agent_id = $1
@@ -979,23 +1029,7 @@ async def agent_get_request(
     )
     if not row:
         raise HTTPException(status_code=404, detail="Purchase request not found or not assigned to you.")
-    return AgentAssignedRequest(
-        id=row["id"],
-        product_id=row["product_id"],
-        product_title=row.get("product_title"),
-        buyer_id=row["buyer_id"],
-        buyer_name=row.get("buyer_name"),
-        purchase_type=row["purchase_type"],
-        quantity=row["quantity"],
-        offered_price=row.get("offered_price"),
-        offered_currency=row["offered_currency"],
-        message=row.get("message"),
-        status=row["status"],
-        assignment_status=row.get("assignment_status"),
-        assignment_notes=row.get("assignment_notes"),
-        report_submitted=row["report_submitted"],
-        created_at=row["created_at"],
-    )
+    return await _build_agent_assigned_request(db, row, agent_id)
 
 
 async def agent_submit_report(
