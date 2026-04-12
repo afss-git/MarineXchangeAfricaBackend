@@ -11,31 +11,38 @@ import {
   Handshake,
   DollarSign,
   AlertCircle,
+  Mail,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import { type Deal } from "@/lib/api"
+import { Deal } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { useRouter } from "next/navigation"
+import { useEffect } from "react"
 import { useDeals, useMySales } from "@/lib/hooks"
 import { PageTour } from "@/components/tour/tour-engine"
 import { DEALS_TOUR } from "@/components/tour/tour-definitions"
 
 const statusConfig: Record<string, { label: string; style: string; icon: React.ElementType }> = {
-  in_progress: { label: "In Progress", style: "bg-ocean/10 text-ocean border-ocean/20", icon: Handshake },
-  awaiting_payment: { label: "Awaiting Payment", style: "bg-warning/10 text-warning border-warning/20", icon: DollarSign },
-  payment_received: { label: "Payment Received", style: "bg-success/10 text-success border-success/20", icon: CheckCircle2 },
-  completed: { label: "Completed", style: "bg-gray-100 text-text-secondary border-gray-200", icon: CheckCircle2 },
-  disputed: { label: "Disputed", style: "bg-danger/10 text-danger border-danger/20", icon: Clock },
+  draft:            { label: "Preparing Offer",    style: "bg-gray-100 text-text-secondary border-gray-200",    icon: Clock },
+  pending_approval: { label: "Pending Approval",   style: "bg-warning/10 text-warning border-warning/20",       icon: Clock },
+  offer_sent:       { label: "Offer Sent",          style: "bg-ocean/10 text-ocean border-ocean/20",             icon: Mail },
+  accepted:         { label: "Accepted",            style: "bg-success/10 text-success border-success/20",       icon: CheckCircle2 },
+  active:           { label: "Active",              style: "bg-ocean/10 text-ocean border-ocean/20",             icon: Handshake },
+  completed:        { label: "Completed",           style: "bg-gray-100 text-text-secondary border-gray-200",    icon: CheckCircle2 },
+  disputed:         { label: "Disputed",            style: "bg-danger/10 text-danger border-danger/20",          icon: AlertCircle },
+  cancelled:        { label: "Cancelled",           style: "bg-gray-100 text-text-secondary border-gray-200",    icon: Clock },
 }
 
-const tabs = ["All", "In Progress", "Awaiting Payment", "Completed"]
+const tabs = ["All", "Offer Sent", "Accepted", "Active", "Completed"]
 
 const tabToStatus: Record<string, string> = {
-  "In Progress": "in_progress",
-  "Awaiting Payment": "awaiting_payment",
-  "Completed": "completed",
+  "Offer Sent": "offer_sent",
+  "Accepted":   "accepted",
+  "Active":     "active",
+  "Completed":  "completed",
 }
 
 function CardSkeleton() {
@@ -58,7 +65,15 @@ function CardSkeleton() {
 
 export default function DealsPage() {
   const { user } = useAuth()
+  const router = useRouter()
+
+  const isAdmin = user?.roles?.includes("admin") || user?.roles?.includes("finance_admin")
   const isSeller = user?.roles?.includes("seller") && !user?.roles?.includes("buyer")
+
+  // Redirect admins to their own deals view
+  useEffect(() => {
+    if (isAdmin) router.replace("/admin/deals")
+  }, [isAdmin, router])
 
   const [activeTab, setActiveTab] = useState("All")
   const [search, setSearch] = useState("")
@@ -67,15 +82,16 @@ export default function DealsPage() {
     page_size: 50,
     status: activeTab !== "All" ? tabToStatus[activeTab] : undefined,
   }
-  const { data: buyerData, isLoading: buyerLoading, error: buyerErr } = useDeals(isSeller ? undefined : params)
-  const { data: sellerData, isLoading: sellerLoading, error: sellerErr } = useMySales(isSeller ? params : undefined)
+  const { data: buyerData, isLoading: buyerLoading, error: buyerErr } = useDeals(isSeller || isAdmin ? undefined : params)
+  const { data: sellerData, isLoading: sellerLoading, error: sellerErr } = useMySales(isSeller && !isAdmin ? params : undefined)
 
-  const data = isSeller ? sellerData : buyerData
+  const data: Deal[] | undefined = isSeller ? sellerData : buyerData
   const isLoading = isSeller ? (!sellerData && sellerLoading) : (!buyerData && buyerLoading)
   const error = (isSeller ? sellerErr : buyerErr)?.message ?? null
 
-  const filtered = (data?.items ?? []).filter((d) =>
-    (d.product_title ?? "").toLowerCase().includes(search.toLowerCase())
+  const filtered = (data ?? []).filter((d) =>
+    (d.product_title ?? "").toLowerCase().includes(search.toLowerCase()) ||
+    d.deal_ref.toLowerCase().includes(search.toLowerCase())
   )
 
   const formatDate = (iso: string) =>
@@ -144,11 +160,23 @@ export default function DealsPage() {
             </div>
           )
           : filtered.map((deal) => {
-            const config = statusConfig[deal.status] ?? statusConfig["in_progress"]
+            const config = statusConfig[deal.status] ?? { label: deal.status, style: "bg-gray-100 text-gray-600 border-gray-200", icon: Clock }
             const StatusIcon = config.icon
+            const isOfferSent = deal.status === "offer_sent"
             return (
-              <Link key={deal.id} href={`/deals/${deal.id}`}>
-                <div className="bg-white rounded-xl border border-border p-5 shadow-sm hover:shadow-md hover:border-ocean/30 transition-all group">
+              <Link key={deal.id} href={isOfferSent ? `/deals/${deal.id}` : `/deals/${deal.id}`}>
+                <div className={cn(
+                  "bg-white rounded-xl border p-5 shadow-sm hover:shadow-md transition-all group",
+                  isOfferSent
+                    ? "border-ocean/40 ring-1 ring-ocean/20 hover:border-ocean/60"
+                    : "border-border hover:border-ocean/30"
+                )}>
+                  {isOfferSent && (
+                    <div className="flex items-center gap-2 mb-3 px-3 py-2 bg-ocean/5 rounded-lg border border-ocean/15 text-sm text-ocean">
+                      <Mail className="w-4 h-4 shrink-0" />
+                      <span>A deal offer is waiting for your review — check your email for the review link.</span>
+                    </div>
+                  )}
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
                     <div className="w-full sm:w-24 h-20 sm:h-16 bg-gray-100 rounded-lg shrink-0 flex items-center justify-center">
                       <Handshake className="w-6 h-6 text-gray-300" />
@@ -158,10 +186,11 @@ export default function DealsPage() {
                       <div className="flex items-start justify-between gap-3 flex-wrap">
                         <div>
                           <h3 className="font-semibold text-text-primary group-hover:text-ocean transition-colors line-clamp-1">
-                            {deal.product_title ?? `Deal ${deal.reference}`}
+                            {deal.product_title ?? `Deal ${deal.deal_ref}`}
                           </h3>
                           <div className="flex items-center gap-2 mt-1">
-                            <span className="text-xs text-text-secondary font-mono">{deal.reference}</span>
+                            <span className="text-xs text-text-secondary font-mono">{deal.deal_ref}</span>
+                            <span className="text-xs text-text-secondary capitalize">{deal.deal_type.replace(/_/g, " ")}</span>
                           </div>
                         </div>
                         <Badge className={cn("text-xs border shrink-0 flex items-center gap-1", config.style)}>
@@ -172,33 +201,27 @@ export default function DealsPage() {
 
                       <div className="flex items-center gap-6 mt-3 flex-wrap">
                         <div>
-                          <p className="text-xs text-text-secondary">Agreed Price</p>
+                          <p className="text-xs text-text-secondary">Deal Price</p>
                           <p className="text-sm font-bold text-navy">
-                            {deal.agreed_price
-                              ? `$${Number(deal.agreed_price).toLocaleString()} ${deal.currency}`
-                              : `$${Number(deal.asking_price).toLocaleString()} ${deal.currency}`}
+                            {deal.currency} {Number(deal.total_price).toLocaleString()}
                           </p>
                         </div>
-                        {deal.escrow_status && (
+                        {isSeller && deal.buyer_name && (
                           <div>
-                            <p className="text-xs text-text-secondary">Escrow</p>
-                            <p className="text-sm text-text-secondary capitalize">
-                              {deal.escrow_status.replace(/_/g, " ")}
-                            </p>
+                            <p className="text-xs text-text-secondary">Buyer</p>
+                            <p className="text-sm text-text-secondary">{deal.buyer_name}</p>
+                          </div>
+                        )}
+                        {!isSeller && deal.seller_name && (
+                          <div>
+                            <p className="text-xs text-text-secondary">Seller</p>
+                            <p className="text-sm text-text-secondary">{deal.seller_name}</p>
                           </div>
                         )}
                         <div>
                           <p className="text-xs text-text-secondary">Created</p>
                           <p className="text-sm text-text-secondary">{formatDate(deal.created_at)}</p>
                         </div>
-                        {deal.current_milestone && deal.status !== "completed" && (
-                          <div className="flex items-center gap-2 text-sm ml-auto">
-                            <div className="w-1.5 h-1.5 rounded-full bg-ocean animate-pulse" />
-                            <span className="text-ocean font-medium capitalize">
-                              {deal.current_milestone.replace(/_/g, " ")}
-                            </span>
-                          </div>
-                        )}
                       </div>
                     </div>
 

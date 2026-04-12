@@ -43,11 +43,14 @@ const prStatusStyle: Record<string, string> = {
 }
 
 const dealStatusStyle: Record<string, string> = {
-  in_progress:      "bg-ocean/10 text-ocean border-ocean/20",
-  awaiting_payment: "bg-warning/10 text-warning border-warning/20",
-  payment_received: "bg-success/10 text-success border-success/20",
+  draft:            "bg-gray-100 text-text-secondary border-gray-200",
+  pending_approval: "bg-warning/10 text-warning border-warning/20",
+  offer_sent:       "bg-ocean/10 text-ocean border-ocean/20",
+  accepted:         "bg-success/10 text-success border-success/20",
+  active:           "bg-ocean/10 text-ocean border-ocean/20",
   completed:        "bg-gray-100 text-text-secondary border-gray-200",
   disputed:         "bg-danger/10 text-danger border-danger/20",
+  cancelled:        "bg-gray-100 text-text-secondary border-gray-200",
 }
 
 const kycStepLabels = ["Phone Verified", "Documents Uploaded", "Agent Review", "Verified"]
@@ -93,7 +96,7 @@ export default function DashboardPage() {
 
   const isLoading    = (!prData && prLoading) || (!dealData && dealLoading)
   const prs          = prData?.items ?? []
-  const deals        = dealData?.items ?? []
+  const deals        = dealData ?? []
   const kyc          = kycData ?? null
   const listings     = mktData?.items ?? []
   const liveAuctions = aucData?.items ?? []
@@ -248,15 +251,15 @@ export default function DashboardPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-text-primary truncate">
-                          {deal.product_title ?? `Deal ${deal.reference}`}
+                          {deal.product_title ?? `Deal ${deal.deal_ref}`}
                         </p>
-                        <p className="text-xs text-text-secondary font-mono">{deal.reference}</p>
+                        <p className="text-xs text-text-secondary font-mono">{deal.deal_ref}</p>
                       </div>
                       <div className="text-right shrink-0">
                         <p className="text-sm font-bold text-navy">
-                          ${Number(deal.agreed_price ?? deal.asking_price).toLocaleString()}
+                          {deal.currency} {Number(deal.total_price).toLocaleString()}
                         </p>
-                        <Badge className={cn("text-xs border mt-0.5 capitalize", dealStatusStyle[deal.status] ?? dealStatusStyle["in_progress"])}>
+                        <Badge className={cn("text-xs border mt-0.5 capitalize", dealStatusStyle[deal.status] ?? dealStatusStyle["offer_sent"])}>
                           {deal.status.replace(/_/g, " ")}
                         </Badge>
                       </div>

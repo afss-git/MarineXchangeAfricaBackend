@@ -1099,7 +1099,7 @@ async def mark_deal_accepted_offline(
     Admin confirms the buyer has accepted the deal offline
     (e.g. via phone, email, or WhatsApp).
 
-    Transitions offer_sent → in_progress so that payment can be recorded.
+    Transitions offer_sent → accepted so that payment can be recorded.
     """
     deal = await _get_deal_or_404(db, deal_id)
 
@@ -1112,7 +1112,7 @@ async def mark_deal_accepted_offline(
     await db.execute(
         """
         UPDATE finance.deals
-        SET status      = 'in_progress',
+        SET status      = 'accepted',
             accepted_at = NOW(),
             admin_notes = COALESCE(admin_notes || E'\\n', '') || $2,
             updated_at  = NOW()
@@ -1132,7 +1132,7 @@ async def mark_deal_accepted_offline(
         resource_type="deal",
         resource_id=str(deal_id),
         old_state={"status": "offer_sent"},
-        new_state={"status": "in_progress", "offline_acceptance_notes": notes},
+        new_state={"status": "accepted", "offline_acceptance_notes": notes},
     )
 
     # Notify buyer that the deal is now active (send payment instructions)

@@ -9,7 +9,6 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { type DealListResponse, dealAdmin } from "@/lib/api"
 import { useAdminDeals } from "@/lib/hooks"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -29,7 +28,8 @@ function fmtMoney(amount: string, currency: string) {
 const STATUS_CFG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
   draft:            { label: "Draft",            color: "bg-gray-100 text-text-secondary border-gray-200", icon: Clock },
   offer_sent:       { label: "Offer Sent",       color: "bg-ocean/10 text-ocean border-ocean/20",          icon: Zap },
-  active:           { label: "Active",           color: "bg-success/10 text-success border-success/20",    icon: CheckCircle2 },
+  accepted:         { label: "Accepted",         color: "bg-success/10 text-success border-success/20",    icon: CheckCircle2 },
+  active:           { label: "Active",           color: "bg-ocean/10 text-ocean border-ocean/20",          icon: CheckCircle2 },
   completed:        { label: "Completed",        color: "bg-navy/10 text-navy border-navy/20",             icon: CheckCircle2 },
   cancelled:        { label: "Cancelled",        color: "bg-gray-100 text-text-secondary border-gray-200", icon: XCircle },
   disputed:         { label: "Disputed",         color: "bg-danger/10 text-danger border-danger/20",       icon: AlertTriangle },
@@ -61,6 +61,7 @@ const STATUS_FILTERS = [
   { value: "",                label: "All" },
   { value: "draft",           label: "Draft" },
   { value: "offer_sent",      label: "Offer Sent" },
+  { value: "accepted",        label: "Accepted" },
   { value: "active",          label: "Active" },
   { value: "completed",       label: "Completed" },
   { value: "disputed",        label: "Disputed" },

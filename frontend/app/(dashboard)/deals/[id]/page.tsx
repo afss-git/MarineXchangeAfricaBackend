@@ -21,7 +21,7 @@ import {
 import { cn } from "@/lib/utils"
 import {
   deals as dealsApi, payments, documents as documentsApi,
-  type Deal, type PaymentScheduleOut, type ScheduleItemOut,
+  type DealDetail, type PaymentScheduleOut, type ScheduleItemOut,
   type PaymentRecordOut, type DealPaymentSummary,
   type DocumentOut, type InvoiceOut,
   ApiRequestError,
@@ -30,9 +30,11 @@ import {
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const DEAL_STATUS: Record<string, { label: string; style: string }> = {
-  in_progress:      { label: "In Progress",      style: "bg-ocean/10 text-ocean border-ocean/20" },
-  awaiting_payment: { label: "Awaiting Payment", style: "bg-warning/10 text-warning border-warning/20" },
-  payment_received: { label: "Payment Received", style: "bg-success/10 text-success border-success/20" },
+  draft:            { label: "Preparing Offer",  style: "bg-gray-100 text-text-secondary border-gray-200" },
+  pending_approval: { label: "Pending Approval", style: "bg-warning/10 text-warning border-warning/20" },
+  offer_sent:       { label: "Offer Sent",        style: "bg-ocean/10 text-ocean border-ocean/20" },
+  accepted:         { label: "Accepted",          style: "bg-success/10 text-success border-success/20" },
+  active:           { label: "Active",            style: "bg-ocean/10 text-ocean border-ocean/20" },
   completed:        { label: "Completed",         style: "bg-gray-100 text-text-secondary border-gray-200" },
   disputed:         { label: "Disputed",          style: "bg-danger/10 text-danger border-danger/20" },
   cancelled:        { label: "Cancelled",         style: "bg-gray-100 text-text-secondary border-gray-200" },
@@ -67,7 +69,7 @@ const MILESTONES = [
   "Funds Released to Seller", "Deal Completed",
 ]
 const STATUS_MILESTONE: Record<string, number> = {
-  in_progress: 2, awaiting_payment: 2, payment_received: 3,
+  offer_sent: 1, accepted: 2, active: 2,
   completed: 6, disputed: 2, cancelled: 1,
 }
 
@@ -568,7 +570,7 @@ type Tab = "overview" | "documents" | "invoices"
 export default function DealDetailPage() {
   const { id } = useParams<{ id: string }>()
 
-  const [deal, setDeal]         = useState<Deal | null>(null)
+  const [deal, setDeal]         = useState<DealDetail | null>(null)
   const [schedule, setSchedule] = useState<PaymentScheduleOut | null>(null)
   const [records, setRecords]   = useState<PaymentRecordOut[]>([])
   const [summary, setSummary]   = useState<DealPaymentSummary | null>(null)
@@ -584,9 +586,7 @@ export default function DealDetailPage() {
     setIsLoading(true)
     setError(null)
     try {
-      const list = await dealsApi.list({ page_size: 100 })
-      const found = list.items.find((d) => d.id === id)
-      if (!found) throw new Error("Deal not found.")
+      const found = await dealsApi.getMyDeal(id)
       setDeal(found)
 
       // Load all deal data in parallel — silently ignore if not available yet
@@ -625,9 +625,9 @@ export default function DealDetailPage() {
     )
   }
 
-  const config      = DEAL_STATUS[deal.status] ?? DEAL_STATUS["in_progress"]
+  const config      = DEAL_STATUS[deal.status] ?? DEAL_STATUS["offer_sent"]
   const milestoneIdx = STATUS_MILESTONE[deal.status] ?? 1
-  const price       = deal.agreed_price ?? deal.asking_price
+  const price       = deal.total_price
   const milestones  = MILESTONES.map((label, i) => ({
     label,
     completed: i < milestoneIdx,
@@ -657,16 +657,24 @@ export default function DealDetailPage() {
       {/* Header card */}
       <div className="bg-white rounded-xl border border-border p-5 shadow-sm">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-          <div className="w-full sm:w-24 h-20 bg-navy/5 rounded-lg shrink-0 flex items-center justify-center">
-            <Handshake className="w-8 h-8 text-navy/30" />
+          <div className="w-full sm:w-24 h-20 bg-navy/5 rounded-lg shrink-0 overflow-hidden flex items-center justify-center">
+            {deal.product_primary_image_url ? (
+              <img
+                src={deal.product_primary_image_url}
+                alt={deal.product_title ?? "Product"}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <Handshake className="w-8 h-8 text-navy/30" />
+            )}
           </div>
           <div className="flex-1">
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div>
                 <h1 className="text-lg font-bold text-text-primary">
-                  {deal.product_title ?? `Deal ${deal.reference}`}
+                  {deal.product_title ?? `Deal ${deal.deal_ref}`}
                 </h1>
-                <p className="text-sm font-mono text-text-secondary mt-0.5">{deal.reference}</p>
+                <p className="text-sm font-mono text-text-secondary mt-0.5">{deal.deal_ref}</p>
               </div>
               <Badge className={cn("text-xs border", config.style)}>{config.label}</Badge>
             </div>
@@ -676,9 +684,9 @@ export default function DealDetailPage() {
                 <p className="text-sm font-bold text-navy">${Number(price).toLocaleString()} {deal.currency}</p>
               </div>
               <div>
-                <p className="text-xs text-text-secondary">Escrow Status</p>
+                <p className="text-xs text-text-secondary">Payment Type</p>
                 <p className="text-sm text-text-secondary capitalize">
-                  {deal.escrow_status?.replace(/_/g, " ") ?? "—"}
+                  {deal.deal_type.replace(/_/g, " ")}
                 </p>
               </div>
               <div>
@@ -695,7 +703,18 @@ export default function DealDetailPage() {
       </div>
 
       {/* Status banners */}
-      {deal.status === "awaiting_payment" && !schedule && (
+      {deal.status === "offer_sent" && (
+        <div className="bg-ocean/5 border border-ocean/20 rounded-xl p-4 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-ocean shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-text-primary">Deal Offer Awaiting Your Review</p>
+            <p className="text-sm text-text-secondary mt-0.5">
+              A formal deal offer has been sent to your email. Please check your inbox for the review link to accept or discuss the terms.
+            </p>
+          </div>
+        </div>
+      )}
+      {deal.status === "accepted" && !schedule && (
         <div className="bg-warning/5 border border-warning/20 rounded-xl p-4 flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
           <div>
@@ -958,7 +977,7 @@ export default function DealDetailPage() {
             <h3 className="text-sm font-semibold text-text-primary">Deal Parties</h3>
             {[
               { role: "Buyer", initials: "ME", label: "You" },
-              { role: "Seller", initials: (deal.seller_id ?? "SE").slice(0, 2).toUpperCase(), label: "Seller" },
+              { role: "Seller", initials: (deal.seller_name ?? "SE").slice(0, 2).toUpperCase(), label: deal.seller_name ?? "Seller" },
             ].map(({ role, initials, label }) => (
               <div key={role} className="flex items-center gap-3">
                 <Avatar className="w-8 h-8">

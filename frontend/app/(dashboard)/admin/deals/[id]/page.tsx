@@ -59,11 +59,15 @@ function fmtCurrency(amount: string | null, currency: string) {
 }
 
 const DEAL_STATUS_COLOR: Record<string, string> = {
-  active: "bg-success/10 text-success border-success/20",
-  completed: "bg-ocean/10 text-ocean border-ocean/20",
-  cancelled: "bg-gray-100 text-text-secondary border-gray-200",
-  disputed: "bg-danger/10 text-danger border-danger/20",
-  pending: "bg-warning/10 text-warning border-warning/20",
+  draft:            "bg-gray-100 text-text-secondary border-gray-200",
+  offer_sent:       "bg-ocean/10 text-ocean border-ocean/20",
+  accepted:         "bg-success/10 text-success border-success/20",
+  active:           "bg-ocean/10 text-ocean border-ocean/20",
+  completed:        "bg-navy/10 text-navy border-navy/20",
+  cancelled:        "bg-gray-100 text-text-secondary border-gray-200",
+  disputed:         "bg-danger/10 text-danger border-danger/20",
+  defaulted:        "bg-danger/10 text-danger border-danger/20",
+  pending_approval: "bg-warning/10 text-warning border-warning/20",
 }
 
 const ITEM_STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
@@ -1340,6 +1344,11 @@ export default function AdminDealDetailPage() {
   const [sendingOffer, setSendingOffer] = useState(false)
   const [offerError, setOfferError] = useState<string | null>(null)
 
+  const [markAcceptNotes, setMarkAcceptNotes] = useState("")
+  const [markingAccepted, setMarkingAccepted] = useState(false)
+  const [markAcceptError, setMarkAcceptError] = useState<string | null>(null)
+  const [markAcceptSuccess, setMarkAcceptSuccess] = useState(false)
+
   const [secApproveNotes, setSecApproveNotes] = useState("")
   const [secApproving, setSecApproving] = useState(false)
   const [secApproveError, setSecApproveError] = useState<string | null>(null)
@@ -1347,7 +1356,7 @@ export default function AdminDealDetailPage() {
 
   const payFileRef = useRef<HTMLInputElement>(null)
   const [payFile, setPayFile] = useState<File | null>(null)
-  const [recPayForm, setRecPayForm] = useState({ amount: "", payment_date: "", bank_name: "", bank_reference: "", notes: "" })
+  const [recPayForm, setRecPayForm] = useState({ amount: "", payment_date: "", bank_name: "", bank_reference: "", notes: "", payment_type: "full_payment" as "full_payment" | "initial_payment" | "installment" })
   const [recPaying, setRecPaying] = useState(false)
   const [recPayError, setRecPayError] = useState<string | null>(null)
   const [recPaySuccess, setRecPaySuccess] = useState(false)
@@ -1502,8 +1511,14 @@ export default function AdminDealDetailPage() {
         <div className="lg:col-span-2 space-y-6">
           {/* Deal overview (always visible) */}
           <div className="bg-white rounded-xl border border-border shadow-sm p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Package className="w-4 h-4 text-ocean" />
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-lg bg-gray-100 shrink-0 overflow-hidden flex items-center justify-center">
+                {deal.product_primary_image_url ? (
+                  <img src={deal.product_primary_image_url} alt={deal.product_title ?? "Product"} className="w-full h-full object-cover" />
+                ) : (
+                  <Package className="w-5 h-5 text-gray-300" />
+                )}
+              </div>
               <h2 className="font-semibold text-text-primary">Deal Overview</h2>
             </div>
             <div className="grid grid-cols-2 gap-x-8">
@@ -1871,7 +1886,60 @@ export default function AdminDealDetailPage() {
                 </div>
               )}
 
-              {/* 3. Second Approval (pending_approval status) */}
+              {/* 3. Mark as Accepted Offline (offer_sent status) */}
+              {deal.status === "offer_sent" && (
+                <div className="bg-white rounded-xl border border-ocean/20 shadow-sm p-5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <CheckCircle2 className="w-4 h-4 text-ocean" />
+                    <h3 className="font-semibold text-text-primary">Mark as Accepted (Offline)</h3>
+                  </div>
+                  <p className="text-xs text-text-secondary mb-3">
+                    Use this when the buyer has confirmed acceptance outside the portal (phone call, email, WhatsApp, etc.).
+                    This advances the deal to <strong>In Progress</strong> so payment can be recorded.
+                  </p>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-text-secondary block">
+                      Reason / Evidence <span className="text-danger">*</span>
+                    </label>
+                    <textarea
+                      value={markAcceptNotes}
+                      onChange={(e) => setMarkAcceptNotes(e.target.value)}
+                      rows={2}
+                      placeholder="e.g. Buyer confirmed acceptance via phone call on 12 Apr 2026"
+                      className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ocean/20 focus:border-ocean resize-none"
+                    />
+                    {markAcceptError && <p className="text-xs text-danger">{markAcceptError}</p>}
+                    {markAcceptSuccess && (
+                      <p className="text-xs text-success flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Deal marked as accepted. Payment can now be recorded.
+                      </p>
+                    )}
+                    <Button
+                      size="sm"
+                      disabled={markingAccepted || markAcceptSuccess || markAcceptNotes.trim().length < 5}
+                      className="bg-ocean hover:bg-ocean-dark text-white gap-1.5"
+                      onClick={async () => {
+                        setMarkingAccepted(true)
+                        setMarkAcceptError(null)
+                        try {
+                          const updated = await dealAdmin.markAccepted(id, markAcceptNotes.trim())
+                          setDeal(updated)
+                          setMarkAcceptSuccess(true)
+                        } catch (e: unknown) {
+                          setMarkAcceptError((e as Error)?.message ?? "Failed to mark as accepted.")
+                        } finally {
+                          setMarkingAccepted(false)
+                        }
+                      }}
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      {markingAccepted ? "Updating…" : "Confirm Offline Acceptance"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* 4. Second Approval (pending_approval status) */}
               {deal.requires_second_approval && deal.status === "pending_approval" && !deal.second_approved_at && (
                 <div className="bg-white rounded-xl border border-border shadow-sm p-5">
                   <div className="flex items-center gap-2 mb-3">
@@ -1922,7 +1990,7 @@ export default function AdminDealDetailPage() {
               )}
 
               {/* 4. Record Payment */}
-              {(deal.status === "active" || deal.status === "offer_sent") && (
+              {(deal.status === "accepted" || deal.status === "active") && (
                 <div className="bg-white rounded-xl border border-border shadow-sm overflow-hidden">
                   <button
                     onClick={() => { setRecPayError(null); setRecPaySuccess(false) }}
@@ -1934,6 +2002,18 @@ export default function AdminDealDetailPage() {
                   </button>
                   <div className="px-5 py-4 space-y-3">
                     <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-medium text-text-secondary block mb-1">Payment Type <span className="text-danger">*</span></label>
+                        <select
+                          value={recPayForm.payment_type}
+                          onChange={(e) => setRecPayForm((f) => ({ ...f, payment_type: e.target.value as typeof f.payment_type }))}
+                          className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ocean/20 focus:border-ocean bg-white"
+                        >
+                          <option value="full_payment">Full Payment</option>
+                          <option value="initial_payment">Initial Payment</option>
+                          <option value="installment">Installment</option>
+                        </select>
+                      </div>
                       <div>
                         <label className="text-xs font-medium text-text-secondary block mb-1">Amount ({deal.currency}) <span className="text-danger">*</span></label>
                         <input
@@ -2013,16 +2093,19 @@ export default function AdminDealDetailPage() {
                         setRecPaySuccess(false)
                         try {
                           const fd = new FormData()
-                          fd.append("amount", recPayForm.amount)
-                          fd.append("payment_date", recPayForm.payment_date)
-                          fd.append("currency", deal.currency)
-                          if (recPayForm.bank_name) fd.append("bank_name", recPayForm.bank_name)
-                          if (recPayForm.bank_reference) fd.append("bank_reference", recPayForm.bank_reference)
-                          if (recPayForm.notes) fd.append("notes", recPayForm.notes)
+                          fd.append("payload", JSON.stringify({
+                            payment_type: recPayForm.payment_type,
+                            amount: parseFloat(recPayForm.amount),
+                            currency: deal.currency,
+                            payment_date: recPayForm.payment_date,
+                            bank_name: recPayForm.bank_name || null,
+                            bank_reference: recPayForm.bank_reference || null,
+                            notes: recPayForm.notes || null,
+                          }))
                           if (payFile) fd.append("proof", payFile)
                           await dealAdmin.recordPayment(id, fd)
                           setRecPaySuccess(true)
-                          setRecPayForm({ amount: "", payment_date: "", bank_name: "", bank_reference: "", notes: "" })
+                          setRecPayForm({ amount: "", payment_date: "", bank_name: "", bank_reference: "", notes: "", payment_type: "full_payment" })
                           setPayFile(null)
                           payments.admin.getSummary(id).then(setSummary).catch(() => {})
                         } catch (e: unknown) {
@@ -2040,7 +2123,7 @@ export default function AdminDealDetailPage() {
               )}
 
               {/* 5. Send Reminder */}
-              {(deal.status === "active" || deal.status === "offer_sent") && (
+              {(deal.status === "accepted" || deal.status === "active") && (
                 <div className="bg-white rounded-xl border border-border shadow-sm p-5">
                   <div className="flex items-center gap-2 mb-3">
                     <Bell className="w-4 h-4 text-ocean" />
