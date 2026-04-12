@@ -13,6 +13,7 @@ Endpoints:
   POST   /payments/{record_id}/reject       — reject a payment record
   POST   /schedule-items/{item_id}/waive    — waive a schedule item
   GET    /deals/{deal_id}/summary           — deal payment summary
+  GET    /evidence/{evidence_id}/download   — get signed download URL for evidence file
 """
 from __future__ import annotations
 
@@ -32,6 +33,11 @@ from app.schemas.payments import (
     VerifyPaymentBody,
     WaiveItemBody,
 )
+from pydantic import BaseModel
+
+
+class EvidenceDownloadResponse(BaseModel):
+    signed_url: str
 from app.services import payment_service
 
 router = APIRouter(tags=["Payments — Admin"])
@@ -163,3 +169,17 @@ async def get_deal_payment_summary(
     current_user: AnyAdmin,
 ):
     return await payment_service.get_deal_payment_summary(db, deal_id)
+
+
+@router.get(
+    "/evidence/{evidence_id}/download",
+    response_model=EvidenceDownloadResponse,
+    summary="Get a short-lived signed URL to download/view a payment evidence file",
+)
+async def get_evidence_download_url(
+    evidence_id: UUID,
+    db: DbConn,
+    current_user: AnyAdmin,
+):
+    signed_url = await payment_service.get_evidence_signed_url(db, evidence_id, current_user)
+    return EvidenceDownloadResponse(signed_url=signed_url)

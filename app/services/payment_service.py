@@ -725,6 +725,49 @@ async def buyer_upload_evidence(
     return EvidenceOut(**dict(row))
 
 
+async def get_evidence_signed_url(
+    db: asyncpg.Connection,
+    evidence_id: UUID,
+    actor: dict,
+) -> str:
+    """
+    Generate a short-lived signed URL for a payment evidence file.
+    Accessible by admin/finance_admin, or the buyer who uploaded it.
+    """
+    row = await db.fetchrow(
+        """
+        SELECT spf.*, spr.deal_id AS deal_id2, d.buyer_id
+        FROM finance.schedule_payment_files spf
+        JOIN finance.schedule_payment_records spr ON spr.id = spf.payment_record_id
+        JOIN finance.deals d ON d.id = spr.deal_id
+        WHERE spf.id = $1
+        """,
+        evidence_id,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Evidence file not found.")
+
+    roles = actor.get("roles", [])
+    is_admin = "admin" in roles or "finance_admin" in roles
+    is_owner = str(row["buyer_id"]) == str(actor["id"])
+
+    if not is_admin and not is_owner:
+        raise HTTPException(status_code=403, detail="Access denied.")
+
+    try:
+        supabase = await get_supabase_admin_client()
+        result = await supabase.storage.from_(EVIDENCE_BUCKET).create_signed_url(
+            row["file_path"], expires_in=3600
+        )
+        signed_url = result.get("signedURL") or result.get("signed_url") or result.get("signedUrl", "")
+        if not signed_url:
+            raise ValueError("Empty signed URL returned.")
+        return signed_url
+    except Exception as exc:
+        logger.error("Evidence signed URL failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not generate download URL.")
+
+
 async def buyer_list_records(
     db: asyncpg.Connection,
     deal_id: UUID,
