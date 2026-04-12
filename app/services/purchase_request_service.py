@@ -1274,6 +1274,56 @@ async def agent_waive_pr_doc_request(
     return await _enrich_pr_doc_request(db, updated)
 
 
+async def agent_download_pr_doc(
+    db: asyncpg.Connection,
+    agent_id: UUID,
+    doc_req_id: UUID,
+):
+    """Stream a fulfilled PR document to the agent, bypassing browser CORS restrictions."""
+    from fastapi.responses import StreamingResponse
+    import io
+
+    row = await db.fetchrow(
+        "SELECT * FROM marketplace.pr_document_requests WHERE id = $1", doc_req_id
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Document request not found.")
+
+    # Verify agent is assigned to the owning purchase request
+    asgn = await db.fetchrow(
+        "SELECT id FROM marketplace.buyer_agent_assignments WHERE request_id = $1 AND agent_id = $2",
+        row["request_id"], agent_id,
+    )
+    if not asgn:
+        raise HTTPException(status_code=403, detail="You are not assigned to this purchase request.")
+
+    if row["status"] != "uploaded" or not row.get("storage_path"):
+        raise HTTPException(status_code=404, detail="No uploaded file for this document request.")
+
+    try:
+        supabase = await get_supabase_admin_client()
+        data = await supabase.storage.from_(PR_DOCS_BUCKET).download(row["storage_path"])
+    except Exception as exc:
+        logger.warning("Failed to download PR doc %s: %s", doc_req_id, exc)
+        raise HTTPException(status_code=502, detail="Could not retrieve file from storage.")
+
+    file_name = row.get("file_name") or "document"
+    ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+    MIME_MAP = {
+        "pdf": "application/pdf",
+        "jpg": "image/jpeg", "jpeg": "image/jpeg",
+        "png": "image/png",
+        "webp": "image/webp",
+    }
+    content_type = MIME_MAP.get(ext, "application/octet-stream")
+
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type=content_type,
+        headers={"Content-Disposition": f'inline; filename="{file_name}"'},
+    )
+
+
 async def buyer_list_pr_doc_requests(
     db: asyncpg.Connection,
     buyer_id: UUID,

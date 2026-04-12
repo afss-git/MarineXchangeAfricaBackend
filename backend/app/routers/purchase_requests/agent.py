@@ -13,6 +13,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 
 from app.deps import BuyerAgent, DbConn
 from app.schemas.purchase_requests import (
@@ -135,4 +136,18 @@ async def waive_doc_request(
 ):
     return await purchase_request_service.agent_waive_pr_doc_request(
         db, current_user["id"], doc_req_id, body.reason
+    )
+
+
+@router.get(
+    "/document-requests/{doc_req_id}/download",
+    summary="Download a fulfilled document (streams file to avoid CORS issues)",
+)
+async def download_doc(
+    doc_req_id: UUID,
+    db: DbConn,
+    current_user: BuyerAgent,
+) -> StreamingResponse:
+    return await purchase_request_service.agent_download_pr_doc(
+        db, current_user["id"], doc_req_id
     )
