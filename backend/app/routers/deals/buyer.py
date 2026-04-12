@@ -22,6 +22,8 @@ from app.schemas.deals import (
     InstallmentScheduleResponse,
     RequestOtpResponse,
 )
+
+
 from app.services import deal_service
 
 router = APIRouter(tags=["Deals — Buyer"])
@@ -61,6 +63,19 @@ async def list_my_sales(
 ):
     filters = {"status": deal_status, "page": page, "page_size": page_size}
     return await deal_service.list_seller_deals(db, filters, current_user)
+
+
+@router.get(
+    "/my/{deal_id}",
+    response_model=DealResponse,
+    summary="Get full detail of one of my deals",
+)
+async def get_my_deal(
+    deal_id: UUID,
+    db: DbConn,
+    current_user: BuyerUser,
+):
+    return await deal_service.get_deal(db, deal_id, current_user)
 
 
 @router.get(
