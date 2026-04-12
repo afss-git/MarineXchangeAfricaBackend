@@ -193,6 +193,27 @@ async def _get_deal_or_404(db: asyncpg.Connection, deal_id: UUID) -> asyncpg.Rec
     return row
 
 
+async def _get_product_image_url(db: asyncpg.Connection, product_id: UUID | None) -> str | None:
+    """Fetch primary product image and return a signed URL."""
+    if not product_id:
+        return None
+    img = await db.fetchrow(
+        "SELECT storage_path FROM marketplace.product_images WHERE product_id = $1 AND is_primary = TRUE LIMIT 1",
+        product_id,
+    )
+    if not img or not img["storage_path"]:
+        return None
+    try:
+        supabase = await get_supabase_admin_client()
+        result = await supabase.storage.from_(settings.SUPABASE_STORAGE_BUCKET).create_signed_url(
+            img["storage_path"], settings.SIGNED_URL_EXPIRY_SECONDS
+        )
+        return result.get("signedURL") or result.get("signed_url") or None
+    except Exception as exc:
+        logger.warning("Failed to generate signed URL for deal product image: %s", exc)
+        return None
+
+
 async def _get_enriched_deal(db: asyncpg.Connection, deal_id: UUID) -> dict:
     """Returns deal dict enriched with buyer/seller/product/payment_account info."""
     row = await db.fetchrow(
@@ -231,6 +252,7 @@ async def _get_enriched_deal(db: asyncpg.Connection, deal_id: UUID) -> dict:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deal not found.")
 
     d = dict(row)
+    d["product_primary_image_url"] = await _get_product_image_url(db, d.get("product_id"))
 
     # Build nested payment_account if present
     if d.get("payment_account_id"):
@@ -1063,6 +1085,77 @@ async def send_deal_offer(
         old_state={"status": "draft"},
         new_state={"status": "offer_sent"},
     )
+
+    return enriched
+
+
+async def mark_deal_accepted_offline(
+    db: asyncpg.Connection,
+    deal_id: UUID,
+    admin: dict,
+    notes: str,
+) -> dict:
+    """
+    Admin confirms the buyer has accepted the deal offline
+    (e.g. via phone, email, or WhatsApp).
+
+    Transitions offer_sent → in_progress so that payment can be recorded.
+    """
+    deal = await _get_deal_or_404(db, deal_id)
+
+    if deal["status"] != "offer_sent":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Deal must be in 'offer_sent' status to mark as accepted (current: '{deal['status']}').",
+        )
+
+    await db.execute(
+        """
+        UPDATE finance.deals
+        SET status      = 'in_progress',
+            accepted_at = NOW(),
+            admin_notes = COALESCE(admin_notes || E'\\n', '') || $2,
+            updated_at  = NOW()
+        WHERE id = $1
+        """,
+        deal_id,
+        f"[Offline acceptance recorded by admin: {notes}]",
+    )
+
+    enriched = await _get_enriched_deal(db, deal_id)
+
+    await write_audit_log(
+        db,
+        actor_id=admin["id"],
+        actor_roles=admin.get("roles", []),
+        action="deal.accepted_offline",
+        resource_type="deal",
+        resource_id=str(deal_id),
+        old_state={"status": "offer_sent"},
+        new_state={"status": "in_progress", "offline_acceptance_notes": notes},
+    )
+
+    # Notify buyer that the deal is now active (send payment instructions)
+    if enriched.get("buyer_email") and enriched.get("payment_account"):
+        pa = enriched["payment_account"]
+        asyncio.create_task(
+            notification_service.send_payment_instructions_notification(
+                buyer_email=enriched["buyer_email"],
+                buyer_phone=enriched.get("buyer_phone"),
+                buyer_name=enriched.get("buyer_name") or "Valued Customer",
+                deal_ref=enriched["deal_ref"],
+                deal_type=enriched["deal_type"],
+                amount_due=str(enriched["total_price"]),
+                currency=enriched["currency"],
+                bank_name=pa.get("bank_name") or "",
+                account_name=pa.get("account_name") or "",
+                account_number=pa.get("account_number") or "",
+                swift_code=pa.get("swift_code"),
+                payment_reference=enriched["deal_ref"],
+                deadline=None,
+                additional_instructions=enriched.get("payment_instructions"),
+            )
+        )
 
     return enriched
 

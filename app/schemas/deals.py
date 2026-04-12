@@ -260,6 +260,7 @@ class DealResponse(BaseModel):
     buyer_phone: str | None = None
     seller_name: str | None = None
     product_title: str | None = None
+    product_primary_image_url: str | None = None
     payment_account: PaymentAccountResponse | None = None
 
     # Computed
@@ -346,6 +347,11 @@ class RecordPaymentRequest(BaseModel):
         if self.payment_type == "installment" and self.installment_number is None:
             raise ValueError("installment_number is required when payment_type is 'installment'")
         return self
+
+
+class MarkAcceptedRequest(BaseModel):
+    notes: str = Field(..., min_length=5, max_length=1000,
+                       description="Reason / evidence for offline acceptance (e.g. 'Buyer confirmed via phone call')")
 
 
 class VerifyPaymentRequest(BaseModel):

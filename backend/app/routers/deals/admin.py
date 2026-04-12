@@ -7,6 +7,7 @@ GET    /deals/{deal_id}                    — deal detail
 PATCH  /deals/{deal_id}                    — update terms (draft only)
 POST   /deals/{deal_id}/second-approve     — second admin approval
 POST   /deals/{deal_id}/send-offer         — send offer to buyer
+POST   /deals/{deal_id}/mark-accepted      — mark deal as accepted offline (bypass portal)
 POST   /deals/{deal_id}/cancel             — cancel deal
 POST   /deals/{deal_id}/record-payment     — record offline payment (multipart)
 POST   /deals/{deal_id}/send-reminder      — manually trigger notification to buyer
@@ -26,6 +27,7 @@ from app.schemas.deals import (
     DealResponse,
     DealUpdate,
     InstallmentScheduleResponse,
+    MarkAcceptedRequest,
     RecordPaymentRequest,
     SecondApproveRequest,
     SendOfferRequest,
@@ -89,6 +91,27 @@ async def send_deal_offer(
     payload: SendOfferRequest = SendOfferRequest(),
 ):
     return await deal_service.send_deal_offer(db, deal_id, current_user)
+
+
+@router.post(
+    "/{deal_id}/mark-accepted",
+    response_model=DealResponse,
+    summary="Mark deal as accepted offline (transitions offer_sent → in_progress)",
+)
+async def mark_deal_accepted(
+    deal_id: UUID,
+    body: MarkAcceptedRequest,
+    db: DbConn,
+    current_user: AdminUser,
+):
+    """
+    Use when the buyer has confirmed acceptance outside the portal
+    (phone call, email, WhatsApp, etc.).
+
+    Records the reason in admin_notes and advances the deal to in_progress
+    so that payment can be recorded immediately.
+    """
+    return await deal_service.mark_deal_accepted_offline(db, deal_id, current_user, body.notes)
 
 
 @router.post(
