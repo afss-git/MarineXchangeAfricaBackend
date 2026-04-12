@@ -1466,3 +1466,64 @@ async def buyer_fulfill_pr_doc_request(
         doc_req_id, storage_path, file.filename,
     )
     return await _enrich_pr_doc_request(db, updated)
+
+
+# ── Admin: document requests ──────────────────────────────────────────────────
+
+async def admin_list_pr_doc_requests(
+    db: asyncpg.Connection,
+    request_id: UUID,
+) -> list[PRDocRequestResponse]:
+    """Admin can list all doc requests for any PR, regardless of assignment."""
+    pr = await db.fetchrow(
+        "SELECT id FROM marketplace.purchase_requests WHERE id = $1", request_id
+    )
+    if not pr:
+        raise HTTPException(status_code=404, detail="Purchase request not found.")
+
+    rows = await db.fetch(
+        "SELECT * FROM marketplace.pr_document_requests WHERE request_id = $1 ORDER BY created_at",
+        request_id,
+    )
+    return [await _enrich_pr_doc_request(db, r) for r in rows]
+
+
+async def admin_download_pr_doc(
+    db: asyncpg.Connection,
+    doc_req_id: UUID,
+):
+    """Admin can download any uploaded PR document (no assignment check)."""
+    from fastapi.responses import StreamingResponse
+    import io
+
+    row = await db.fetchrow(
+        "SELECT * FROM marketplace.pr_document_requests WHERE id = $1", doc_req_id
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Document request not found.")
+
+    if not row.get("storage_path") or row["status"] not in ("uploaded", "approved", "rejected"):
+        raise HTTPException(status_code=404, detail="No uploaded file for this document request.")
+
+    try:
+        supabase = await get_supabase_admin_client()
+        data = await supabase.storage.from_(PR_DOCS_BUCKET).download(row["storage_path"])
+    except Exception as exc:
+        logger.warning("Admin failed to download PR doc %s: %s", doc_req_id, exc)
+        raise HTTPException(status_code=502, detail="Could not retrieve file from storage.")
+
+    file_name = row.get("file_name") or "document"
+    ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+    MIME_MAP = {
+        "pdf": "application/pdf",
+        "jpg": "image/jpeg", "jpeg": "image/jpeg",
+        "png": "image/png",
+        "webp": "image/webp",
+    }
+    content_type = MIME_MAP.get(ext, "application/octet-stream")
+
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type=content_type,
+        headers={"Content-Disposition": f'inline; filename="{file_name}"'},
+    )

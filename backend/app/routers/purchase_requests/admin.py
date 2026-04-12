@@ -1,12 +1,14 @@
 """
 Phase 7 — Admin purchase-request endpoints.
 
-GET  /purchase-requests/admin                   — list all requests
-GET  /purchase-requests/admin/{id}              — view one request (full detail)
-POST /purchase-requests/admin/{id}/assign-agent — assign buyer agent
-POST /purchase-requests/admin/{id}/approve      — approve request
-POST /purchase-requests/admin/{id}/reject       — reject request
-POST /purchase-requests/admin/{id}/convert      — convert to DRAFT deal
+GET  /purchase-requests/admin                                       — list all requests
+GET  /purchase-requests/admin/{id}                                  — view one request (full detail)
+POST /purchase-requests/admin/{id}/assign-agent                     — assign buyer agent
+POST /purchase-requests/admin/{id}/approve                          — approve request
+POST /purchase-requests/admin/{id}/reject                           — reject request
+POST /purchase-requests/admin/{id}/convert                          — convert to DRAFT deal
+GET  /purchase-requests/admin/{id}/document-requests                — list agent doc requests
+GET  /purchase-requests/admin/document-requests/{doc_req_id}/download — download an uploaded doc
 """
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Query
+from fastapi.responses import StreamingResponse
 
 from app.deps import AdminUser, DbConn
 from app.schemas.purchase_requests import (
@@ -23,6 +26,7 @@ from app.schemas.purchase_requests import (
     AssignAgentRequest,
     ConvertToDealBody,
     ConvertToDealResponse,
+    PRDocRequestResponse,
     RejectRequestBody,
 )
 from app.services import purchase_request_service
@@ -45,6 +49,18 @@ async def list_all_requests(
     return await purchase_request_service.admin_list_requests(
         db, status, buyer_id, product_id
     )
+
+
+@router.get(
+    "/document-requests/{doc_req_id}/download",
+    summary="Download an uploaded PR document (Admin)",
+)
+async def admin_download_doc(
+    doc_req_id: UUID,
+    db: DbConn,
+    current_user: AdminUser,
+) -> StreamingResponse:
+    return await purchase_request_service.admin_download_pr_doc(db, doc_req_id)
 
 
 @router.get(
@@ -143,3 +159,16 @@ async def convert_to_deal(
         db, current_user, request_id,
         body.deal_type, body.agreed_price, body.currency, body.admin_notes,
     )
+
+
+@router.get(
+    "/{request_id}/document-requests",
+    response_model=list[PRDocRequestResponse],
+    summary="List all agent document requests for a purchase request (Admin)",
+)
+async def list_doc_requests(
+    request_id: UUID,
+    db: DbConn,
+    current_user: AdminUser,
+):
+    return await purchase_request_service.admin_list_pr_doc_requests(db, request_id)
