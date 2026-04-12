@@ -22,6 +22,7 @@ from app.schemas.purchase_requests import (
     AgentReportInfo,
     PRDocRequestCreate,
     PRDocRequestResponse,
+    PRDocRequestReviewBody,
     PRDocRequestWaiveBody,
     SubmitAgentReport,
 )
@@ -136,6 +137,22 @@ async def waive_doc_request(
 ):
     return await purchase_request_service.agent_waive_pr_doc_request(
         db, current_user["id"], doc_req_id, body.reason
+    )
+
+
+@router.post(
+    "/document-requests/{doc_req_id}/review",
+    response_model=PRDocRequestResponse,
+    summary="Approve or reject an uploaded document",
+)
+async def review_doc_request(
+    doc_req_id: UUID,
+    body: PRDocRequestReviewBody,
+    db: DbConn,
+    current_user: BuyerAgent,
+):
+    return await purchase_request_service.agent_review_pr_doc_request(
+        db, current_user["id"], doc_req_id, body.action, body.notes
     )
 
 

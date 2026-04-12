@@ -934,8 +934,10 @@ async def _build_agent_assigned_request(
         product_condition=r.get("product_condition"),
         product_asking_price=r.get("product_asking_price"),
         product_currency=r.get("product_currency"),
+        product_availability_type=r.get("product_availability_type"),
         product_location_country=r.get("product_location_country"),
         product_location_port=r.get("product_location_port"),
+        seller_company=r.get("seller_company"),
         buyer_id=r["buyer_id"],
         buyer_name=r.get("buyer_name"),
         buyer_email=buyer_auth["email"] if buyer_auth else None,
@@ -963,27 +965,30 @@ async def agent_list_assigned(
         """
         SELECT
             pr.*,
-            mp.title            AS product_title,
-            mp.description      AS product_description,
-            mp.condition        AS product_condition,
-            mp.asking_price     AS product_asking_price,
-            mp.currency         AS product_currency,
-            mp.location_country AS product_location_country,
-            mp.location_port    AS product_location_port,
-            buyer.full_name     AS buyer_name,
-            buyer.phone         AS buyer_phone,
-            buyer.company_name  AS buyer_company,
-            buyer.kyc_status    AS buyer_kyc_status,
-            ba.status           AS assignment_status,
-            ba.notes            AS assignment_notes,
+            mp.title             AS product_title,
+            mp.description       AS product_description,
+            mp.condition         AS product_condition,
+            mp.asking_price      AS product_asking_price,
+            mp.currency          AS product_currency,
+            mp.availability_type AS product_availability_type,
+            mp.location_country  AS product_location_country,
+            mp.location_port     AS product_location_port,
+            sp.company_name      AS seller_company,
+            buyer.full_name      AS buyer_name,
+            buyer.phone          AS buyer_phone,
+            buyer.company_name   AS buyer_company,
+            buyer.kyc_status     AS buyer_kyc_status,
+            ba.status            AS assignment_status,
+            ba.notes             AS assignment_notes,
             EXISTS (
                 SELECT 1 FROM marketplace.buyer_agent_reports bar
                 WHERE bar.request_id = pr.id AND bar.agent_id = $1
             ) AS report_submitted
         FROM marketplace.purchase_requests pr
         JOIN marketplace.buyer_agent_assignments ba ON ba.request_id = pr.id AND ba.agent_id = $1
-        LEFT JOIN marketplace.products mp   ON mp.id = pr.product_id
-        LEFT JOIN public.profiles buyer     ON buyer.id = pr.buyer_id
+        LEFT JOIN marketplace.products mp    ON mp.id = pr.product_id
+        LEFT JOIN public.profiles sp         ON sp.id = mp.seller_id
+        LEFT JOIN public.profiles buyer      ON buyer.id = pr.buyer_id
         ORDER BY ba.created_at DESC
         """,
         agent_id,
@@ -1001,27 +1006,30 @@ async def agent_get_request(
         """
         SELECT
             pr.*,
-            mp.title            AS product_title,
-            mp.description      AS product_description,
-            mp.condition        AS product_condition,
-            mp.asking_price     AS product_asking_price,
-            mp.currency         AS product_currency,
-            mp.location_country AS product_location_country,
-            mp.location_port    AS product_location_port,
-            buyer.full_name     AS buyer_name,
-            buyer.phone         AS buyer_phone,
-            buyer.company_name  AS buyer_company,
-            buyer.kyc_status    AS buyer_kyc_status,
-            ba.status           AS assignment_status,
-            ba.notes            AS assignment_notes,
+            mp.title             AS product_title,
+            mp.description       AS product_description,
+            mp.condition         AS product_condition,
+            mp.asking_price      AS product_asking_price,
+            mp.currency          AS product_currency,
+            mp.availability_type AS product_availability_type,
+            mp.location_country  AS product_location_country,
+            mp.location_port     AS product_location_port,
+            sp.company_name      AS seller_company,
+            buyer.full_name      AS buyer_name,
+            buyer.phone          AS buyer_phone,
+            buyer.company_name   AS buyer_company,
+            buyer.kyc_status     AS buyer_kyc_status,
+            ba.status            AS assignment_status,
+            ba.notes             AS assignment_notes,
             EXISTS (
                 SELECT 1 FROM marketplace.buyer_agent_reports bar
                 WHERE bar.request_id = pr.id AND bar.agent_id = $1
             ) AS report_submitted
         FROM marketplace.purchase_requests pr
         JOIN marketplace.buyer_agent_assignments ba ON ba.request_id = pr.id AND ba.agent_id = $1
-        LEFT JOIN marketplace.products mp   ON mp.id = pr.product_id
-        LEFT JOIN public.profiles buyer     ON buyer.id = pr.buyer_id
+        LEFT JOIN marketplace.products mp    ON mp.id = pr.product_id
+        LEFT JOIN public.profiles sp         ON sp.id = mp.seller_id
+        LEFT JOIN public.profiles buyer      ON buyer.id = pr.buyer_id
         WHERE pr.id = $2
         """,
         agent_id,
@@ -1285,6 +1293,45 @@ async def agent_waive_pr_doc_request(
         WHERE id = $1 RETURNING *
         """,
         doc_req_id, reason,
+    )
+    return await _enrich_pr_doc_request(db, updated)
+
+
+async def agent_review_pr_doc_request(
+    db: asyncpg.Connection,
+    agent_id: UUID,
+    doc_req_id: UUID,
+    action: str,        # "approve" | "reject"
+    notes: str | None,
+) -> PRDocRequestResponse:
+    """Agent approves or rejects an uploaded PR document."""
+    row = await db.fetchrow(
+        "SELECT * FROM marketplace.pr_document_requests WHERE id = $1", doc_req_id
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Document request not found.")
+
+    asgn = await db.fetchrow(
+        "SELECT id FROM marketplace.buyer_agent_assignments WHERE request_id = $1 AND agent_id = $2",
+        row["request_id"], agent_id,
+    )
+    if not asgn:
+        raise HTTPException(status_code=403, detail="You are not assigned to this purchase request.")
+
+    if row["status"] != "uploaded":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Can only review documents in 'uploaded' status. Current status: '{row['status']}'.",
+        )
+
+    new_status = "approved" if action == "approve" else "rejected"
+    updated = await db.fetchrow(
+        """
+        UPDATE marketplace.pr_document_requests
+        SET status = $2, review_notes = $3, reviewed_at = NOW(), updated_at = NOW()
+        WHERE id = $1 RETURNING *
+        """,
+        doc_req_id, new_status, notes,
     )
     return await _enrich_pr_doc_request(db, updated)
 

@@ -177,8 +177,10 @@ class AgentAssignedRequest(BaseModel):
     product_condition:   Optional[str] = None
     product_asking_price: Optional[Decimal] = None
     product_currency:    Optional[str] = None
+    product_availability_type: Optional[str] = None
     product_location_country: Optional[str] = None
     product_location_port:    Optional[str] = None
+    seller_company:           Optional[str] = None
     buyer_id:         UUID
     buyer_name:       Optional[str]  = None
     buyer_email:      Optional[str]  = None
@@ -224,10 +226,12 @@ class PRDocRequestResponse(BaseModel):
     priority:      str
     status:        str
     waive_reason:  Optional[str]  = None
+    review_notes:  Optional[str]  = None
     file_name:     Optional[str]  = None
     signed_url:    Optional[str]  = None
     fulfilled_at:  Optional[datetime] = None
     waived_at:     Optional[datetime] = None
+    reviewed_at:   Optional[datetime] = None
     created_at:    datetime
 
     model_config = {"from_attributes": True}
@@ -235,3 +239,8 @@ class PRDocRequestResponse(BaseModel):
 
 class PRDocRequestWaiveBody(BaseModel):
     reason: str = Field(..., min_length=1, max_length=1000)
+
+
+class PRDocRequestReviewBody(BaseModel):
+    action: Literal["approve", "reject"]
+    notes:  Optional[str] = Field(default=None, max_length=1000)
