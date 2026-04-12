@@ -45,7 +45,7 @@ from app.services.auth_service import get_supabase_admin_client
 
 logger = logging.getLogger(__name__)
 
-EVIDENCE_BUCKET = "payment-evidence"
+EVIDENCE_BUCKET = "deal-payment-proofs"
 
 
 def _record_to_dict(row: asyncpg.Record) -> dict:
