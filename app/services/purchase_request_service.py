@@ -351,7 +351,23 @@ async def get_buyer_request(
     )
     if not row:
         raise HTTPException(status_code=404, detail="Purchase request not found.")
-    return _pr_to_response(row)
+
+    # Fetch primary product image
+    image_url: str | None = None
+    img_row = await db.fetchrow(
+        """
+        SELECT storage_path FROM marketplace.product_images
+        WHERE product_id = $1 AND is_primary = TRUE
+        LIMIT 1
+        """,
+        row["product_id"],
+    )
+    if img_row and img_row["storage_path"]:
+        image_url = await _signed_image_url(img_row["storage_path"])
+
+    resp = _pr_to_response(row)
+    resp.product_primary_image_url = image_url
+    return resp
 
 
 async def cancel_purchase_request(

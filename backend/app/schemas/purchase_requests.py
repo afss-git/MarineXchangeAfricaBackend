@@ -28,6 +28,7 @@ class PurchaseRequestResponse(BaseModel):
     id:               UUID
     product_id:       UUID
     product_title:    Optional[str]    = None
+    product_primary_image_url: Optional[str] = None
     buyer_id:         UUID
     purchase_type:    str
     quantity:         int
@@ -163,7 +164,7 @@ class AdminPurchaseRequestList(BaseModel):
 class SubmitAgentReport(BaseModel):
     financial_capacity_usd: Decimal = Field(..., gt=0)
     risk_rating:            Literal["low", "medium", "high"]
-    recommendation:         Literal["recommend_approve", "recommend_reject"]
+    recommendation:         Literal["approve", "reject", "requires_resubmission"]
     verification_notes:     str = Field(..., min_length=10, max_length=5000)
 
 
