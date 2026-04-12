@@ -661,7 +661,7 @@ async def approve_request(
     )
     if not pr:
         raise HTTPException(status_code=404, detail="Purchase request not found.")
-    if pr["status"] not in ("submitted", "agent_assigned", "under_review"):
+    if pr["status"] not in ("submitted", "agent_assigned", "docs_requested", "under_review"):
         raise HTTPException(
             status_code=400,
             detail=f"Cannot approve a request in '{pr['status']}' status.",
@@ -1031,25 +1031,6 @@ async def agent_submit_report(
         raise HTTPException(
             status_code=400,
             detail="This request is not in a reviewable state.",
-        )
-
-    # Gate: all *required* doc requests must be fulfilled or waived before report
-    unfulfilled = await db.fetchval(
-        """
-        SELECT COUNT(*) FROM marketplace.pr_document_requests
-        WHERE request_id = $1
-          AND priority = 'required'
-          AND status = 'pending'
-        """,
-        request_id,
-    )
-    if unfulfilled:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"{unfulfilled} required document(s) are still pending. "
-                "All required documents must be uploaded or waived before submitting the report."
-            ),
         )
 
     # Insert the report

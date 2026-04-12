@@ -1748,6 +1748,13 @@ async def verify_document(
             (document_id, submission_id, verified_by, verifier_role, status,
              checklist_results, extracted_data, rejection_reason, notes)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (document_id, verified_by) DO UPDATE SET
+            status            = EXCLUDED.status,
+            checklist_results = EXCLUDED.checklist_results,
+            extracted_data    = EXCLUDED.extracted_data,
+            rejection_reason  = EXCLUDED.rejection_reason,
+            notes             = EXCLUDED.notes,
+            verifier_role     = EXCLUDED.verifier_role
         RETURNING *
         """,
         document_id, doc["submission_id"], verified_by, "buyer_agent", verification_status,

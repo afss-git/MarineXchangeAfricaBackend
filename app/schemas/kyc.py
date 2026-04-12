@@ -71,8 +71,7 @@ class CreateDocumentTypeRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
     name:           str         = Field(min_length=2, max_length=100)
-    slug:           str         = Field(min_length=2, max_length=60,
-                                        pattern=r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
+    slug:           str         = Field(min_length=2, max_length=60)
     description:    str | None  = Field(default=None, max_length=500)
     is_required:    bool        = False
     display_order:  int         = 0
