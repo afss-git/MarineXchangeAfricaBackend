@@ -190,3 +190,36 @@ class AgentAssignedRequest(BaseModel):
 class AgentAssignedList(BaseModel):
     items: list[AgentAssignedRequest]
     total: int
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PR DOCUMENT REQUESTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+class PRDocRequestCreate(BaseModel):
+    document_name: str      = Field(..., min_length=1, max_length=200)
+    reason:        Optional[str] = Field(default=None, max_length=1000)
+    priority:      Literal["required", "recommended"] = "required"
+
+
+class PRDocRequestResponse(BaseModel):
+    id:            UUID
+    request_id:    UUID
+    agent_id:      UUID
+    agent_name:    Optional[str]  = None
+    document_name: str
+    reason:        Optional[str]  = None
+    priority:      str
+    status:        str
+    waive_reason:  Optional[str]  = None
+    file_name:     Optional[str]  = None
+    signed_url:    Optional[str]  = None
+    fulfilled_at:  Optional[datetime] = None
+    waived_at:     Optional[datetime] = None
+    created_at:    datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PRDocRequestWaiveBody(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=1000)

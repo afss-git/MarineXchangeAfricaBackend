@@ -4,22 +4,26 @@ Phase 7 — Purchase Request Service Layer.
 Business logic for:
   - Buyer: submit, list, view, cancel purchase requests
   - Admin: list, view, assign agent, approve, reject, convert to deal
-  - Buyer Agent: list assigned, view, submit structured report
+  - Buyer Agent: list assigned, view, submit structured report, request/waive PR docs
+  - Buyer: view/fulfill PR document requests
 """
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import uuid as uuid_module
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
 import asyncpg
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 
 from app.config import settings
 from app.core.audit import AuditAction, write_audit_log
+from app.core.file_validation import validate_magic_bytes
 from app.schemas.purchase_requests import (
     AdminPurchaseRequestDetail,
     AdminPurchaseRequestList,
@@ -27,6 +31,8 @@ from app.schemas.purchase_requests import (
     AgentAssignedRequest,
     AgentAssignmentInfo,
     AgentReportInfo,
+    PRDocRequestCreate,
+    PRDocRequestResponse,
     PurchaseRequestCreate,
     PurchaseRequestListResponse,
     PurchaseRequestResponse,
@@ -37,6 +43,16 @@ from app.services.auth_service import get_supabase_admin_client
 from app.services.deal_service import generate_deal_ref
 
 logger = logging.getLogger(__name__)
+
+PR_DOCS_BUCKET = "pr-documents"
+PR_DOC_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+PR_DOC_ALLOWED_MIME = {
+    "image/jpeg", "image/png", "image/webp", "application/pdf",
+}
+PR_DOC_MIME_TO_EXT = {
+    "image/jpeg": "jpg", "image/png": "png",
+    "image/webp": "webp", "application/pdf": "pdf",
+}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -769,6 +785,18 @@ async def convert_to_deal(
             detail=f"Only 'approved' requests can be converted. Current status: '{pr['status']}'.",
         )
 
+    # Buyer KYC must be approved before a deal can be created
+    buyer_kyc = await db.fetchval(
+        "SELECT kyc_status FROM public.profiles WHERE id = $1", pr["buyer_id"]
+    )
+    if buyer_kyc != "approved":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Buyer's KYC is '{buyer_kyc}'. KYC must be approved before converting to a deal."
+            ),
+        )
+
     # Get seller_id from the product
     product = await db.fetchrow(
         "SELECT seller_id FROM marketplace.products WHERE id = $1", pr["product_id"]
@@ -983,10 +1011,29 @@ async def agent_submit_report(
     pr = await db.fetchrow(
         "SELECT status FROM marketplace.purchase_requests WHERE id = $1", request_id
     )
-    if not pr or pr["status"] not in ("agent_assigned", "under_review"):
+    if not pr or pr["status"] not in ("agent_assigned", "docs_requested", "under_review"):
         raise HTTPException(
             status_code=400,
             detail="This request is not in a reviewable state.",
+        )
+
+    # Gate: all *required* doc requests must be fulfilled or waived before report
+    unfulfilled = await db.fetchval(
+        """
+        SELECT COUNT(*) FROM marketplace.pr_document_requests
+        WHERE request_id = $1
+          AND priority = 'required'
+          AND status = 'pending'
+        """,
+        request_id,
+    )
+    if unfulfilled:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{unfulfilled} required document(s) are still pending. "
+                "All required documents must be uploaded or waived before submitting the report."
+            ),
         )
 
     # Insert the report
@@ -1048,3 +1095,246 @@ async def agent_submit_report(
         verification_notes=report_row["verification_notes"],
         created_at=report_row["created_at"],
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PR DOCUMENT REQUESTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def _pr_doc_signed_url(storage_path: str) -> str | None:
+    try:
+        supabase = await get_supabase_admin_client()
+        result = await supabase.storage.from_(PR_DOCS_BUCKET).create_signed_url(
+            storage_path, settings.SIGNED_URL_EXPIRY_SECONDS
+        )
+        return result.get("signedURL") or result.get("signed_url") or None
+    except Exception as exc:
+        logger.warning("PR doc signed URL failed for %s: %s", storage_path, exc)
+        return None
+
+
+async def _enrich_pr_doc_request(db: asyncpg.Connection, row: asyncpg.Record) -> PRDocRequestResponse:
+    signed_url = None
+    if row.get("storage_path"):
+        signed_url = await _pr_doc_signed_url(row["storage_path"])
+    agent_name = await db.fetchval(
+        "SELECT full_name FROM public.profiles WHERE id = $1", row["agent_id"]
+    )
+    return PRDocRequestResponse(
+        id=row["id"],
+        request_id=row["request_id"],
+        agent_id=row["agent_id"],
+        agent_name=agent_name,
+        document_name=row["document_name"],
+        reason=row.get("reason"),
+        priority=row["priority"],
+        status=row["status"],
+        waive_reason=row.get("waive_reason"),
+        file_name=row.get("file_name"),
+        signed_url=signed_url,
+        fulfilled_at=row.get("fulfilled_at"),
+        waived_at=row.get("waived_at"),
+        created_at=row["created_at"],
+    )
+
+
+async def agent_request_pr_documents(
+    db: asyncpg.Connection,
+    agent_id: UUID,
+    request_id: UUID,
+    items: list[PRDocRequestCreate],
+) -> list[PRDocRequestResponse]:
+    """Agent requests one or more custom documents from the buyer for a PR."""
+    asgn = await db.fetchrow(
+        "SELECT id FROM marketplace.buyer_agent_assignments WHERE request_id = $1 AND agent_id = $2",
+        request_id, agent_id,
+    )
+    if not asgn:
+        raise HTTPException(status_code=403, detail="You are not assigned to this purchase request.")
+
+    pr = await db.fetchrow(
+        "SELECT status FROM marketplace.purchase_requests WHERE id = $1", request_id
+    )
+    if not pr:
+        raise HTTPException(status_code=404, detail="Purchase request not found.")
+    if pr["status"] in ("approved", "rejected", "converted", "cancelled"):
+        raise HTTPException(status_code=400, detail="Cannot request documents on a closed request.")
+
+    rows = []
+    async with db.transaction():
+        for item in items:
+            row = await db.fetchrow(
+                """
+                INSERT INTO marketplace.pr_document_requests
+                    (request_id, agent_id, document_name, reason, priority)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING *
+                """,
+                request_id, agent_id,
+                item.document_name.strip(), item.reason, item.priority,
+            )
+            rows.append(row)
+
+        # Advance PR status to docs_requested if still at agent_assigned
+        await db.execute(
+            """
+            UPDATE marketplace.purchase_requests
+            SET status = 'docs_requested', updated_at = NOW()
+            WHERE id = $1 AND status IN ('agent_assigned', 'docs_requested')
+            """,
+            request_id,
+        )
+
+    # Notify buyer
+    buyer_row = await db.fetchrow(
+        """
+        SELECT u.email, p.full_name, p.phone
+        FROM auth.users u JOIN public.profiles p ON p.id = u.id
+        WHERE u.id = (SELECT buyer_id FROM marketplace.purchase_requests WHERE id = $1)
+        """,
+        request_id,
+    )
+    if buyer_row:
+        doc_names = [item.document_name for item in items]
+        asyncio.create_task(notification_service.notify_buyer_pr_documents_requested(
+            buyer_email=buyer_row["email"],
+            buyer_name=buyer_row["full_name"] or "",
+            request_id=str(request_id),
+            document_names=doc_names,
+        ))
+
+    return [await _enrich_pr_doc_request(db, r) for r in rows]
+
+
+async def agent_list_pr_doc_requests(
+    db: asyncpg.Connection,
+    agent_id: UUID,
+    request_id: UUID,
+) -> list[PRDocRequestResponse]:
+    asgn = await db.fetchrow(
+        "SELECT id FROM marketplace.buyer_agent_assignments WHERE request_id = $1 AND agent_id = $2",
+        request_id, agent_id,
+    )
+    if not asgn:
+        raise HTTPException(status_code=403, detail="You are not assigned to this purchase request.")
+
+    rows = await db.fetch(
+        "SELECT * FROM marketplace.pr_document_requests WHERE request_id = $1 ORDER BY created_at",
+        request_id,
+    )
+    return [await _enrich_pr_doc_request(db, r) for r in rows]
+
+
+async def agent_waive_pr_doc_request(
+    db: asyncpg.Connection,
+    agent_id: UUID,
+    doc_req_id: UUID,
+    reason: str,
+) -> PRDocRequestResponse:
+    row = await db.fetchrow(
+        "SELECT * FROM marketplace.pr_document_requests WHERE id = $1", doc_req_id
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Document request not found.")
+
+    asgn = await db.fetchrow(
+        "SELECT id FROM marketplace.buyer_agent_assignments WHERE request_id = $1 AND agent_id = $2",
+        row["request_id"], agent_id,
+    )
+    if not asgn:
+        raise HTTPException(status_code=403, detail="You are not assigned to this purchase request.")
+
+    if row["status"] != "pending":
+        raise HTTPException(status_code=400, detail=f"Cannot waive a request in '{row['status']}' status.")
+
+    updated = await db.fetchrow(
+        """
+        UPDATE marketplace.pr_document_requests
+        SET status = 'waived', waive_reason = $2, waived_at = NOW(), updated_at = NOW()
+        WHERE id = $1 RETURNING *
+        """,
+        doc_req_id, reason,
+    )
+    return await _enrich_pr_doc_request(db, updated)
+
+
+async def buyer_list_pr_doc_requests(
+    db: asyncpg.Connection,
+    buyer_id: UUID,
+    request_id: UUID,
+) -> list[PRDocRequestResponse]:
+    pr = await db.fetchrow(
+        "SELECT buyer_id FROM marketplace.purchase_requests WHERE id = $1", request_id
+    )
+    if not pr or str(pr["buyer_id"]) != str(buyer_id):
+        raise HTTPException(status_code=404, detail="Purchase request not found.")
+
+    rows = await db.fetch(
+        "SELECT * FROM marketplace.pr_document_requests WHERE request_id = $1 ORDER BY created_at",
+        request_id,
+    )
+    return [await _enrich_pr_doc_request(db, r) for r in rows]
+
+
+async def buyer_fulfill_pr_doc_request(
+    db: asyncpg.Connection,
+    buyer_id: UUID,
+    doc_req_id: UUID,
+    file: UploadFile,
+) -> PRDocRequestResponse:
+    """Buyer uploads a file to fulfill a pending PR document request."""
+    req_row = await db.fetchrow(
+        "SELECT * FROM marketplace.pr_document_requests WHERE id = $1", doc_req_id
+    )
+    if not req_row:
+        raise HTTPException(status_code=404, detail="Document request not found.")
+
+    # Verify buyer owns the parent PR
+    pr = await db.fetchrow(
+        "SELECT buyer_id FROM marketplace.purchase_requests WHERE id = $1", req_row["request_id"]
+    )
+    if not pr or str(pr["buyer_id"]) != str(buyer_id):
+        raise HTTPException(status_code=403, detail="Not your purchase request.")
+
+    if req_row["status"] != "pending":
+        raise HTTPException(status_code=400, detail=f"This request is already '{req_row['status']}'.")
+
+    # Validate file
+    file_bytes = await file.read()
+    if len(file_bytes) > PR_DOC_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 10 MB.")
+
+    mime_type = file.content_type or ""
+    if mime_type not in PR_DOC_ALLOWED_MIME:
+        raise HTTPException(status_code=415, detail="Unsupported file type. Upload JPEG, PNG, WebP, or PDF.")
+
+    if not validate_magic_bytes(file_bytes, mime_type):
+        raise HTTPException(status_code=415, detail="File content does not match the declared type.")
+
+    # Upload to Supabase Storage
+    doc_id = uuid_module.uuid4()
+    ext = PR_DOC_MIME_TO_EXT[mime_type]
+    storage_path = f"{buyer_id}/{req_row['request_id']}/{doc_id}.{ext}"
+
+    try:
+        supabase = await get_supabase_admin_client()
+        await supabase.storage.from_(PR_DOCS_BUCKET).upload(
+            storage_path, file_bytes, {"content_type": mime_type},
+        )
+    except Exception as exc:
+        logger.error("PR doc upload failed: %s", exc)
+        raise HTTPException(status_code=502, detail="Upload failed. Please try again.")
+
+    updated = await db.fetchrow(
+        """
+        UPDATE marketplace.pr_document_requests
+        SET status = 'uploaded',
+            storage_path = $2,
+            file_name    = $3,
+            fulfilled_at = NOW(),
+            updated_at   = NOW()
+        WHERE id = $1 RETURNING *
+        """,
+        doc_req_id, storage_path, file.filename,
+    )
+    return await _enrich_pr_doc_request(db, updated)

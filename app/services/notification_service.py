@@ -1346,3 +1346,28 @@ async def notify_invoice_issued(deal_id: Any, invoice_id: str, invoice_ref: str)
     except Exception as exc:
         logger.error("notify_invoice_issued failed: %s", exc)
 
+
+
+async def notify_buyer_pr_documents_requested(
+    buyer_email: str,
+    buyer_name: str,
+    request_id: str,
+    document_names: list[str],
+) -> None:
+    """Notify buyer when an agent requests additional documents for a purchase request."""
+    doc_list = "".join(f"<li>{n}</li>" for n in document_names)
+    await _send(
+        to=buyer_email,
+        subject="Documents Required for Your Purchase Request — Harbours360",
+        html=f"""
+        <p>Dear {buyer_name},</p>
+        <p>Your assigned agent has requested the following document(s) to proceed
+        with your purchase request:</p>
+        <ul>{doc_list}</ul>
+        <p>Please log in to your account and navigate to your Purchase Request to
+        upload the requested documents at your earliest convenience.</p>
+        <br/>
+        <p>Best regards,<br/><strong>Harbours360 Verification Team</strong></p>
+        """,
+        tags=[{"name": "category", "value": "pr_documents_requested"}],
+    )
