@@ -12,14 +12,16 @@ POST /auth/internal/create-admin        — admin creates admin/finance-admin ac
 """
 from __future__ import annotations
 
+import secrets
 from typing import Annotated
 from uuid import UUID
 
 import asyncpg
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 
 from app.config import settings
 from app.core.audit import AuditAction, write_audit_log
+from app.core.cookies import clear_auth_cookies, set_auth_cookies
 from app.deps import AdminUser, CurrentUser, DbConn, get_db, require_roles
 from app.schemas.auth import (
     AuthTokenResponse,
@@ -131,21 +133,25 @@ async def bootstrap_first_admin(
 async def admin_login(
     payload: LoginRequest,
     request: Request,
+    response: Response,
     db: asyncpg.Connection = Depends(get_db),
 ):
-    return await login_user(
+    result = await login_user(
         db=db,
         email=payload.email,
         password=payload.password,
         required_role="admin",
         request=request,
     )
+    set_auth_cookies(response, result.access_token, result.refresh_token, result.expires_in)
+    return result
 
 
 @router.post("/admin/logout", response_model=MessageResponse, summary="Admin logout")
 async def admin_logout(
     current_user: CurrentUser,
     request: Request,
+    response: Response,
     db: DbConn,
 ):
     await logout_user(
@@ -154,6 +160,7 @@ async def admin_logout(
         user=current_user,
         request=request,
     )
+    clear_auth_cookies(response)
     return MessageResponse(message="Logged out successfully.")
 
 
@@ -167,21 +174,25 @@ async def admin_logout(
 async def finance_admin_login(
     payload: LoginRequest,
     request: Request,
+    response: Response,
     db: asyncpg.Connection = Depends(get_db),
 ):
-    return await login_user(
+    result = await login_user(
         db=db,
         email=payload.email,
         password=payload.password,
         required_role="finance_admin",
         request=request,
     )
+    set_auth_cookies(response, result.access_token, result.refresh_token, result.expires_in)
+    return result
 
 
 @router.post("/finance-admin/logout", response_model=MessageResponse, summary="Finance Admin logout")
 async def finance_admin_logout(
     current_user: CurrentUser,
     request: Request,
+    response: Response,
     db: DbConn,
 ):
     await logout_user(
@@ -190,6 +201,7 @@ async def finance_admin_logout(
         user=current_user,
         request=request,
     )
+    clear_auth_cookies(response)
     return MessageResponse(message="Logged out successfully.")
 
 
@@ -203,24 +215,26 @@ async def finance_admin_logout(
 async def agent_login(
     payload: LoginRequest,
     request: Request,
+    response: Response,
     db: asyncpg.Connection = Depends(get_db),
 ):
-    # Agents can be verification_agent OR buyer_agent
-    # We accept either — the profile will carry the specific role
-    return await login_user(
+    result = await login_user(
         db=db,
         email=payload.email,
         password=payload.password,
-        required_role=None,                 # role check done after — see auth_service
+        required_role=None,
         required_role_any=["verification_agent", "buyer_agent"],
         request=request,
     )
+    set_auth_cookies(response, result.access_token, result.refresh_token, result.expires_in)
+    return result
 
 
 @router.post("/agent/logout", response_model=MessageResponse, summary="Agent logout")
 async def agent_logout(
     current_user: CurrentUser,
     request: Request,
+    response: Response,
     db: DbConn,
 ):
     await logout_user(
@@ -229,6 +243,7 @@ async def agent_logout(
         user=current_user,
         request=request,
     )
+    clear_auth_cookies(response)
     return MessageResponse(message="Logged out successfully.")
 
 
@@ -260,7 +275,7 @@ async def create_agent(
         country=payload.country,
         roles=[payload.agent_type],
         created_by=UUID(str(current_user["id"])),
-        invited_by_name=current_user.get("full_name") or "Harbours360 Admin",
+        invited_by_name=current_user.get("full_name") or "MarineXchange Admin",
         request=request,
     )
 
@@ -308,7 +323,7 @@ async def create_admin_user(
         country=payload.country,
         roles=[payload.role],
         created_by=UUID(str(current_user["id"])),
-        invited_by_name=current_user.get("full_name") or "Harbours360 Admin",
+        invited_by_name=current_user.get("full_name") or "MarineXchange Admin",
         request=request,
     )
 

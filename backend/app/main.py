@@ -201,11 +201,15 @@ app.include_router(twilio_webhook_router)
 async def health_check():
     """
     Used by Render health checks and Cloudflare monitoring.
-    Returns DB connectivity status so you can catch DATABASE_URL
-    misconfigurations without reading server logs.
+    In production: returns only status to avoid information disclosure.
+    In development: includes diagnostics to catch misconfigurations early.
     """
     db_ok = await check_db_connection()
-    # admin_buyers_sellers_v1 flag — present once buyers/sellers routers are loaded
+
+    if settings.is_production:
+        return {"status": "healthy" if db_ok else "degraded"}
+
+    # Development only — detailed diagnostics
     registered = [r.path for r in app.routes]
     return {
         "status": "healthy" if db_ok else "degraded",

@@ -105,9 +105,11 @@ async def _load_bids(db: asyncpg.Connection, auction_id: UUID, limit: int = 0) -
         WHERE ab.auction_id = $1
         ORDER BY ab.amount DESC, ab.bid_time DESC
     """
-    args = [auction_id]
+    args: list = [auction_id]
     if limit:
-        q += f" LIMIT {limit}"
+        # SECURITY: LIMIT parameterized — never interpolated directly
+        q += f" LIMIT $2"
+        args.append(limit)
     return await db.fetch(q, *args)
 
 

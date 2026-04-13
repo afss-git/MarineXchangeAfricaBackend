@@ -11,10 +11,11 @@ from __future__ import annotations
 from uuid import UUID
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from supabase import AClient
 
 from app.core.audit import AuditAction, write_audit_log
+from app.core.cookies import clear_auth_cookies, set_auth_cookies
 from app.deps import CurrentUser, DbConn, get_db
 from app.schemas.auth import (
     AddSellerRoleRequest,
@@ -81,15 +82,18 @@ async def buyer_signup(
 async def buyer_login(
     payload: LoginRequest,
     request: Request,
+    response: Response,
     db: asyncpg.Connection = Depends(get_db),
 ):
-    return await login_user(
+    result = await login_user(
         db=db,
         email=payload.email,
         password=payload.password,
         required_role="buyer",
         request=request,
     )
+    set_auth_cookies(response, result.access_token, result.refresh_token, result.expires_in)
+    return result
 
 
 @router.post(
@@ -101,6 +105,7 @@ async def buyer_login(
 async def buyer_logout(
     current_user: CurrentUser,
     request: Request,
+    response: Response,
     db: DbConn,
 ):
     await logout_user(
@@ -109,6 +114,7 @@ async def buyer_logout(
         user=current_user,
         request=request,
     )
+    clear_auth_cookies(response)
     return MessageResponse(message="Logged out successfully.")
 
 

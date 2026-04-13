@@ -9,8 +9,9 @@ POST /auth/seller/logout         — invalidate session
 from __future__ import annotations
 
 import asyncpg
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status
 
+from app.core.cookies import clear_auth_cookies, set_auth_cookies
 from app.deps import CurrentUser, DbConn, get_db
 from app.schemas.auth import (
     AuthTokenResponse,
@@ -115,15 +116,18 @@ async def seller_buyer_signup(
 async def seller_login(
     payload: LoginRequest,
     request: Request,
+    response: Response,
     db: asyncpg.Connection = Depends(get_db),
 ):
-    return await login_user(
+    result = await login_user(
         db=db,
         email=payload.email,
         password=payload.password,
         required_role="seller",
         request=request,
     )
+    set_auth_cookies(response, result.access_token, result.refresh_token, result.expires_in)
+    return result
 
 
 @router.post(
@@ -134,6 +138,7 @@ async def seller_login(
 async def seller_logout(
     current_user: CurrentUser,
     request: Request,
+    response: Response,
     db: DbConn,
 ):
     await logout_user(
@@ -142,4 +147,5 @@ async def seller_logout(
         user=current_user,
         request=request,
     )
+    clear_auth_cookies(response)
     return MessageResponse(message="Logged out successfully.")

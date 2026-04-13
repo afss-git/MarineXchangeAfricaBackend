@@ -11,9 +11,15 @@ POST   /auth/refresh         — exchange refresh_token for new access_token
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
-from pydantic import BaseModel
+import logging
 
+from fastapi import APIRouter, Cookie, File, HTTPException, Request, Response, UploadFile, status
+from pydantic import BaseModel
+from typing import Annotated
+
+logger = logging.getLogger(__name__)
+
+from app.core.cookies import set_auth_cookies
 from app.deps import CurrentUser, DbConn
 from app.schemas.auth import (
     AuthTokenResponse,
@@ -33,19 +39,40 @@ router = APIRouter(tags=["Auth — Profile"])
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str | None = None  # optional — cookie is also accepted
 
 
 @router.post(
     "/refresh",
     response_model=AuthTokenResponse,
     summary="Refresh access token",
-    description="Exchange a valid refresh_token for a new access_token + refresh_token pair.",
+    description=(
+        "Exchange a valid refresh_token for a new access_token + refresh_token pair.\n\n"
+        "Token source (in order of priority):\n"
+        "1. `refresh_token` field in the JSON body\n"
+        "2. `refresh_token` HttpOnly cookie (set automatically by login)\n\n"
+        "On success, new HttpOnly cookies are also set."
+    ),
 )
-async def refresh_token(body: RefreshRequest, db: DbConn) -> AuthTokenResponse:
+async def refresh_token(
+    response: Response,
+    db: DbConn,
+    body: RefreshRequest | None = None,
+    refresh_token_cookie: Annotated[str | None, Cookie(alias="refresh_token")] = None,
+) -> AuthTokenResponse:
+    from uuid import UUID
+
+    # Resolve token: body takes priority over cookie
+    token = (body.refresh_token if body else None) or refresh_token_cookie
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token is required. Please log in again.",
+        )
+
     supabase = await get_supabase_client()
     try:
-        resp = await supabase.auth.refresh_session(body.refresh_token)
+        resp = await supabase.auth.refresh_session(token)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -60,7 +87,6 @@ async def refresh_token(body: RefreshRequest, db: DbConn) -> AuthTokenResponse:
         )
 
     user_id = session.user.id
-    from uuid import UUID
     profile = await db.fetchrow(
         """
         SELECT p.*, u.email
@@ -73,13 +99,17 @@ async def refresh_token(body: RefreshRequest, db: DbConn) -> AuthTokenResponse:
     if not profile:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found.")
 
-    return AuthTokenResponse(
+    expires_in = session.expires_in or 3600
+    result = AuthTokenResponse(
         access_token=session.access_token,
         refresh_token=session.refresh_token,
         token_type="bearer",
-        expires_in=session.expires_in or 3600,
+        expires_in=expires_in,
         user=build_profile_response({**dict(profile), "email": session.user.email}),
     )
+    # Rotate cookies — old refresh token is now invalid
+    set_auth_cookies(response, session.access_token, session.refresh_token, expires_in)
+    return result
 
 
 @router.get(
@@ -144,9 +174,10 @@ async def set_password(
             {"password": body.new_password, "user_metadata": {"requires_password_change": False}},
         )
     except Exception as exc:
+        logger.error("Failed to set password for user %s: %s", current_user["id"], exc)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to set password: {exc}",
+            detail="Failed to set password. Please try again or contact support.",
         )
     return {"message": "Password set successfully. You can now log in with your new password."}
 

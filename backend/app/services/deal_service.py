@@ -193,27 +193,6 @@ async def _get_deal_or_404(db: asyncpg.Connection, deal_id: UUID) -> asyncpg.Rec
     return row
 
 
-async def _get_product_image_url(db: asyncpg.Connection, product_id: UUID | None) -> str | None:
-    """Fetch primary product image and return a signed URL."""
-    if not product_id:
-        return None
-    img = await db.fetchrow(
-        "SELECT storage_path FROM marketplace.product_images WHERE product_id = $1 AND is_primary = TRUE LIMIT 1",
-        product_id,
-    )
-    if not img or not img["storage_path"]:
-        return None
-    try:
-        supabase = await get_supabase_admin_client()
-        result = await supabase.storage.from_(settings.SUPABASE_STORAGE_BUCKET).create_signed_url(
-            img["storage_path"], settings.SIGNED_URL_EXPIRY_SECONDS
-        )
-        return result.get("signedURL") or result.get("signed_url") or None
-    except Exception as exc:
-        logger.warning("Failed to generate signed URL for deal product image: %s", exc)
-        return None
-
-
 async def _get_enriched_deal(db: asyncpg.Connection, deal_id: UUID) -> dict:
     """Returns deal dict enriched with buyer/seller/product/payment_account info."""
     row = await db.fetchrow(
@@ -252,7 +231,6 @@ async def _get_enriched_deal(db: asyncpg.Connection, deal_id: UUID) -> dict:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deal not found.")
 
     d = dict(row)
-    d["product_primary_image_url"] = await _get_product_image_url(db, d.get("product_id"))
 
     # Build nested payment_account if present
     if d.get("payment_account_id"):
@@ -877,6 +855,11 @@ async def list_deals(
     page_size = int(filters.get("page_size", 20))
     offset = (page - 1) * page_size
 
+    # SECURITY: LIMIT and OFFSET are parameterized — never interpolated directly
+    values.extend([page_size, offset])
+    limit_idx = idx
+    offset_idx = idx + 1
+
     rows = await db.fetch(
         f"""
         SELECT
@@ -894,7 +877,7 @@ async def list_deals(
         LEFT JOIN marketplace.products pr ON pr.id = d.product_id
         {where_clause}
         ORDER BY d.created_at DESC
-        LIMIT {page_size} OFFSET {offset}
+        LIMIT ${limit_idx} OFFSET ${offset_idx}
         """,
         *values,
     )
@@ -920,6 +903,11 @@ async def list_seller_deals(
     page_size = int(filters.get("page_size", 20))
     offset = (page - 1) * page_size
 
+    # SECURITY: LIMIT and OFFSET are parameterized — never interpolated directly
+    values.extend([page_size, offset])
+    limit_idx = idx
+    offset_idx = idx + 1
+
     rows = await db.fetch(
         f"""
         SELECT
@@ -937,7 +925,7 @@ async def list_seller_deals(
         LEFT JOIN marketplace.products pr ON pr.id = d.product_id
         {where_clause}
         ORDER BY d.created_at DESC
-        LIMIT {page_size} OFFSET {offset}
+        LIMIT ${limit_idx} OFFSET ${offset_idx}
         """,
         *values,
     )
@@ -1089,77 +1077,6 @@ async def send_deal_offer(
     return enriched
 
 
-async def mark_deal_accepted_offline(
-    db: asyncpg.Connection,
-    deal_id: UUID,
-    admin: dict,
-    notes: str,
-) -> dict:
-    """
-    Admin confirms the buyer has accepted the deal offline
-    (e.g. via phone, email, or WhatsApp).
-
-    Transitions offer_sent → accepted so that payment can be recorded.
-    """
-    deal = await _get_deal_or_404(db, deal_id)
-
-    if deal["status"] != "offer_sent":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Deal must be in 'offer_sent' status to mark as accepted (current: '{deal['status']}').",
-        )
-
-    await db.execute(
-        """
-        UPDATE finance.deals
-        SET status      = 'accepted',
-            accepted_at = NOW(),
-            admin_notes = COALESCE(admin_notes || E'\\n', '') || $2,
-            updated_at  = NOW()
-        WHERE id = $1
-        """,
-        deal_id,
-        f"[Offline acceptance recorded by admin: {notes}]",
-    )
-
-    enriched = await _get_enriched_deal(db, deal_id)
-
-    await write_audit_log(
-        db,
-        actor_id=admin["id"],
-        actor_roles=admin.get("roles", []),
-        action="deal.accepted_offline",
-        resource_type="deal",
-        resource_id=str(deal_id),
-        old_state={"status": "offer_sent"},
-        new_state={"status": "accepted", "offline_acceptance_notes": notes},
-    )
-
-    # Notify buyer that the deal is now active (send payment instructions)
-    if enriched.get("buyer_email") and enriched.get("payment_account"):
-        pa = enriched["payment_account"]
-        asyncio.create_task(
-            notification_service.send_payment_instructions_notification(
-                buyer_email=enriched["buyer_email"],
-                buyer_phone=enriched.get("buyer_phone"),
-                buyer_name=enriched.get("buyer_name") or "Valued Customer",
-                deal_ref=enriched["deal_ref"],
-                deal_type=enriched["deal_type"],
-                amount_due=str(enriched["total_price"]),
-                currency=enriched["currency"],
-                bank_name=pa.get("bank_name") or "",
-                account_name=pa.get("account_name") or "",
-                account_number=pa.get("account_number") or "",
-                swift_code=pa.get("swift_code"),
-                payment_reference=enriched["deal_ref"],
-                deadline=None,
-                additional_instructions=enriched.get("payment_instructions"),
-            )
-        )
-
-    return enriched
-
-
 async def request_deal_otp(db: asyncpg.Connection, portal_token: str) -> dict:
     """Buyer requests OTP to accept deal."""
     deal = await db.fetchrow(
@@ -1198,10 +1115,14 @@ async def request_deal_otp(db: asyncpg.Connection, portal_token: str) -> dict:
     otp_hash = hash_otp(otp)
     otp_expires = now + timedelta(minutes=settings.DEAL_OTP_EXPIRY_MINUTES)
 
+    # Reset attempt counter when new OTP is issued
     await db.execute(
         """
         UPDATE finance.deals
-        SET acceptance_otp_hash = $1, acceptance_otp_expires = $2
+        SET acceptance_otp_hash    = $1,
+            acceptance_otp_expires = $2,
+            otp_attempt_count      = 0,
+            otp_locked_at          = NULL
         WHERE id = $3
         """,
         otp_hash,
@@ -1230,6 +1151,9 @@ async def request_deal_otp(db: asyncpg.Connection, portal_token: str) -> dict:
         "message": "OTP sent to your registered email and phone",
         "expires_in_minutes": settings.DEAL_OTP_EXPIRY_MINUTES,
     }
+
+
+MAX_OTP_ATTEMPTS = 5  # lock after this many consecutive wrong guesses
 
 
 async def accept_deal(
@@ -1275,6 +1199,17 @@ async def accept_deal(
             detail="No OTP requested. Please request an OTP first.",
         )
 
+    # Brute-force lockout: OTP is invalidated after MAX_OTP_ATTEMPTS wrong guesses
+    attempt_count = deal.get("otp_attempt_count") or 0
+    if attempt_count >= MAX_OTP_ATTEMPTS:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                "Too many incorrect OTP attempts. This OTP has been invalidated. "
+                "Please request a new OTP to continue."
+            ),
+        )
+
     if deal["acceptance_otp_expires"] < now:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1282,10 +1217,38 @@ async def accept_deal(
         )
 
     if hash_otp(otp) != deal["acceptance_otp_hash"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid OTP. Please try again.",
-        )
+        # Increment attempt counter — invalidate OTP when limit is reached
+        new_count = attempt_count + 1
+        if new_count >= MAX_OTP_ATTEMPTS:
+            # Wipe the OTP entirely so attacker cannot reuse the remaining window
+            await db.execute(
+                """
+                UPDATE finance.deals
+                SET otp_attempt_count   = $1,
+                    otp_locked_at       = $2,
+                    acceptance_otp_hash    = NULL,
+                    acceptance_otp_expires = NULL
+                WHERE id = $3
+                """,
+                new_count, now, deal["id"],
+            )
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=(
+                    "Too many incorrect OTP attempts. This OTP has been invalidated. "
+                    "Please request a new OTP to continue."
+                ),
+            )
+        else:
+            await db.execute(
+                "UPDATE finance.deals SET otp_attempt_count = $1 WHERE id = $2",
+                new_count, deal["id"],
+            )
+            remaining = MAX_OTP_ATTEMPTS - new_count
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid OTP. {remaining} attempt(s) remaining before lockout.",
+            )
 
     # Record acceptance and transition to accepted → payment_pending
     await db.execute(
@@ -2010,9 +1973,9 @@ async def send_manual_reminder(
         <p><strong>Amount Due:</strong> {deal['currency']} {enriched.get('initial_payment_due') or deal['total_price']}</p>
         {custom_line}
         <p>Please contact us if you have any questions.</p>
-        <br/><p><strong>Harbours360 Finance Team</strong></p>
+        <br/><p><strong>MarineXchange Africa Finance Team</strong></p>
         """
-        sms_body = f"Harbours360: {body_intro} Deal {deal_ref}. Amount: {deal['currency']} {enriched.get('initial_payment_due') or deal['total_price']}. Ref: {deal_ref}."
+        sms_body = f"MarineXchange: {body_intro} Deal {deal_ref}. Amount: {deal['currency']} {enriched.get('initial_payment_due') or deal['total_price']}. Ref: {deal_ref}."
         if custom_message:
             sms_body += f" {custom_message}"
 

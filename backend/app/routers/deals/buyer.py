@@ -12,7 +12,10 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Request, status
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
+from app.core.rate_limit import limiter
 from app.deps import BuyerUser, CurrentUser, DbConn, SellerUser
 from app.schemas.deals import (
     AcceptDealRequest,
@@ -22,8 +25,6 @@ from app.schemas.deals import (
     InstallmentScheduleResponse,
     RequestOtpResponse,
 )
-
-
 from app.services import deal_service
 
 router = APIRouter(tags=["Deals — Buyer"])
@@ -66,19 +67,6 @@ async def list_my_sales(
 
 
 @router.get(
-    "/my/{deal_id}",
-    response_model=DealResponse,
-    summary="Get full detail of one of my deals",
-)
-async def get_my_deal(
-    deal_id: UUID,
-    db: DbConn,
-    current_user: BuyerUser,
-):
-    return await deal_service.get_deal(db, deal_id, current_user)
-
-
-@router.get(
     "/portal/{token}",
     response_model=DealPortalResponse,
     summary="View deal portal (no auth required)",
@@ -95,8 +83,10 @@ async def get_deal_portal(
     response_model=RequestOtpResponse,
     summary="Request OTP to accept deal (no auth required)",
 )
+@limiter.limit("3/minute;10/hour")
 async def request_deal_otp(
     token: str,
+    request: Request,
     db: DbConn,
 ):
     return await deal_service.request_deal_otp(db, token)
@@ -107,6 +97,7 @@ async def request_deal_otp(
     response_model=DealPortalResponse,
     summary="Accept deal with OTP (no auth required)",
 )
+@limiter.limit("5/minute;20/hour")
 async def accept_deal(
     token: str,
     payload: AcceptDealRequest,

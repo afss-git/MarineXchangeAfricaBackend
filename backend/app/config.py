@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     )
 
     # ── App ───────────────────────────────────────────────────────────────────
-    APP_NAME: str = "Harbours360 API"
+    APP_NAME: str = "MarineXchange Africa API"
     APP_VERSION: str = "1.1.0"
     ENVIRONMENT: str = "development"
     DEBUG: bool = False
@@ -36,8 +36,8 @@ class Settings(BaseSettings):
 
     # ── Email ─────────────────────────────────────────────────────────────────
     RESEND_API_KEY: str = ""
-    EMAIL_FROM: str = "noreply@harbours360.com"
-    EMAIL_FROM_NAME: str = "Harbours360"
+    EMAIL_FROM: str = "noreply@marinexchange.africa"
+    EMAIL_FROM_NAME: str = "MarineXchange Africa"
 
     # ── Finance rules (fixed — DB also enforces these) ────────────────────────
     DUAL_CONTROL_THRESHOLD_USD: float = 100_000.0
@@ -62,18 +62,25 @@ class Settings(BaseSettings):
     # ── Security ──────────────────────────────────────────────────────────────
     CLOUDFLARE_TUNNEL_SECRET: str = ""
 
-    # ── Twilio (SMS OTP + Agent Voice Calls) ─────────────────────────────────
+    # ── SMS (Twilio) ──────────────────────────────────────────────────────────
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_AUTH_TOKEN: str = ""
-    TWILIO_VERIFY_SERVICE_SID: str = ""     # Twilio Verify service for SMS OTP
-    TWILIO_PHONE_NUMBER: str = ""           # Primary Twilio number (E.164)
-    TWILIO_WEBHOOK_URL: str = ""            # Base URL for Twilio callbacks
+    TWILIO_FROM_NUMBER: str = ""    # E.164 format: +12345678901
 
     # ── Deals ─────────────────────────────────────────────────────────────────
     DEAL_PORTAL_TOKEN_EXPIRY_HOURS: int = 48
     DEAL_OTP_EXPIRY_MINUTES: int = 10
     DEAL_MAX_ACTIVE_PER_BUYER: int = 3
     DEAL_HIGH_VALUE_THRESHOLD_USD: float = 100_000.0
+
+    # ── Auth Cookies ──────────────────────────────────────────────────────────
+    # When USE_COOKIE_AUTH=true, login responses set HttpOnly Secure cookies
+    # instead of returning tokens in the JSON body.
+    # This prevents XSS-based token theft from localStorage.
+    # Must be true in production. Set to false only for API-only integrations.
+    USE_COOKIE_AUTH: bool = True
+    COOKIE_DOMAIN: str = ""        # e.g. "marinexchange.africa" — empty = current host
+    COOKIE_SAME_SITE: str = "lax"  # "strict" | "lax" | "none" (none requires Secure)
 
     # ── Admin ─────────────────────────────────────────────────────────────────
     ADMIN_EMAIL: str = ""       # Notification recipient for admin alerts (purchase requests, etc.)

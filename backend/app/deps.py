@@ -1,6 +1,14 @@
 """
 FastAPI dependency injection.
 All authenticated routes use these dependencies to get the current user.
+
+Token resolution order:
+  1. Authorization: Bearer <token> header  — API clients, mobile apps
+  2. access_token HttpOnly cookie          — web frontend (cookie-auth mode)
+
+This dual approach ensures backward compatibility during the localStorage → cookie
+migration. Once the frontend is fully migrated, the header fallback can be kept for
+future API integrations (it does not weaken security when cookies are in use).
 """
 from __future__ import annotations
 
@@ -8,7 +16,7 @@ from typing import Annotated
 from uuid import UUID
 
 import asyncpg
-from fastapi import Depends, Header, HTTPException, Request, status
+from fastapi import Cookie, Depends, Header, HTTPException, Request, status
 
 from app.core.security import decode_supabase_jwt, extract_token_from_header
 from app.db.client import get_db
@@ -17,6 +25,7 @@ from app.db.client import get_db
 async def get_current_user(
     request: Request,
     authorization: Annotated[str | None, Header()] = None,
+    access_token: Annotated[str | None, Cookie()] = None,
     db: asyncpg.Connection = Depends(get_db),
 ) -> dict:
     """
@@ -24,10 +33,19 @@ async def get_current_user(
     Validates the Supabase JWT, loads the user profile from DB.
     Raises HTTP 401 if token is invalid, HTTP 403 if account is inactive.
 
-    Attach to any route that requires authentication:
-        current_user: dict = Depends(get_current_user)
+    Token resolution: Authorization header → access_token cookie.
     """
-    token = extract_token_from_header(authorization)
+    # Prefer Authorization header (API clients); fall back to HttpOnly cookie (web)
+    if authorization:
+        token = extract_token_from_header(authorization)
+    elif access_token:
+        token = access_token
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header is required.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     payload = decode_supabase_jwt(token)
     user_id: str = payload["sub"]
 
