@@ -639,8 +639,8 @@ export default function KYCPage() {
         <p className="font-semibold text-text-primary">Need help with verification?</p>
         <p className="text-sm text-text-secondary mt-1">
           Contact our team at{" "}
-          <a href="mailto:kyc@marinexchange.africa" className="text-ocean hover:underline">
-            kyc@marinexchange.africa
+          <a href="mailto:kyc@harbours360.com" className="text-ocean hover:underline">
+            kyc@harbours360.com
           </a>
         </p>
       </div>

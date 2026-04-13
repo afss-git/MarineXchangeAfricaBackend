@@ -35,12 +35,9 @@ export function Navbar() {
             </div>
             <div className="flex flex-col">
               <div className="flex items-baseline tracking-tight">
-                <span className={`font-extrabold text-lg transition-colors duration-300 ${isScrolled ? "text-navy" : "text-white"}`}>Marine</span>
-                <span className="text-ocean font-extrabold text-lg">Xchange</span>
+                <span className={`font-extrabold text-lg transition-colors duration-300 ${isScrolled ? "text-navy" : "text-white"}`}>Harbours</span>
+                <span className="text-ocean font-extrabold text-lg">360</span>
               </div>
-              <span className={`text-[9px] font-medium tracking-[0.2em] uppercase -mt-1 transition-colors duration-300 ${isScrolled ? "text-navy" : "text-white/70"}`}>
-                AFRICA
-              </span>
             </div>
           </Link>
 

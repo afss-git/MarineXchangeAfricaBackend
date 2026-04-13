@@ -129,8 +129,7 @@ export default function AssetDetailPage() {
     } catch (e) {
       if (e instanceof ApiRequestError) {
         if (e.status === 401) {
-          // Session expired — redirect to login
-          router.push("/login?reason=session_expired")
+          setPrError("Your session could not be verified. Please refresh the page and try again.")
           return
         }
         if (e.status === 403) {

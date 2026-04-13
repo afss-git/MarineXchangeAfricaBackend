@@ -355,7 +355,7 @@ function PublicNav() {
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2 font-extrabold text-navy text-base">
           <Anchor className="w-5 h-5 text-ocean" />
-          MarineXchange
+          Harbours360
         </Link>
         <div className="flex items-center gap-2">
           <Link href="/login">
@@ -376,7 +376,7 @@ function PublicFooter() {
   return (
     <footer className="border-t border-border bg-white mt-12">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-        <p className="text-xs text-text-secondary">© {new Date().getFullYear()} MarineXchange Africa. All rights reserved.</p>
+        <p className="text-xs text-text-secondary">© {new Date().getFullYear()} Harbours360. All rights reserved.</p>
         <div className="flex items-center gap-4 text-xs text-text-secondary">
           <Link href="/" className="hover:text-ocean">Home</Link>
           <Link href="/login" className="hover:text-ocean">Log In</Link>

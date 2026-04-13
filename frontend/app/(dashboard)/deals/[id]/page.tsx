@@ -41,18 +41,20 @@ const DEAL_STATUS: Record<string, { label: string; style: string }> = {
 }
 
 const ITEM_STATUS: Record<string, { label: string; style: string }> = {
-  pending:        { label: "Pending",    style: "bg-warning/10 text-warning border-warning/20" },
-  pending_review: { label: "In Review", style: "bg-ocean/10 text-ocean border-ocean/20" },
-  verified:       { label: "Verified",  style: "bg-success/10 text-success border-success/20" },
-  overdue:        { label: "Overdue",   style: "bg-danger/10 text-danger border-danger/20" },
-  waived:         { label: "Waived",    style: "bg-gray-100 text-text-secondary border-gray-200" },
+  pending:           { label: "Pending",           style: "bg-warning/10 text-warning border-warning/20" },
+  payment_submitted: { label: "Payment Submitted", style: "bg-ocean/10 text-ocean border-ocean/20" },
+  verified:          { label: "Verified",          style: "bg-success/10 text-success border-success/20" },
+  overdue:           { label: "Overdue",           style: "bg-danger/10 text-danger border-danger/20" },
+  waived:            { label: "Waived",            style: "bg-gray-100 text-text-secondary border-gray-200" },
 }
 
 const RECORD_STATUS: Record<string, { label: string; style: string }> = {
-  pending_review: { label: "Under Review", style: "bg-ocean/10 text-ocean border-ocean/20" },
-  verified:       { label: "Verified",     style: "bg-success/10 text-success border-success/20" },
-  rejected:       { label: "Rejected",     style: "bg-danger/10 text-danger border-danger/20" },
+  pending_verification: { label: "Under Review", style: "bg-ocean/10 text-ocean border-ocean/20" },
+  verified:             { label: "Verified",     style: "bg-success/10 text-success border-success/20" },
+  rejected:             { label: "Rejected",     style: "bg-danger/10 text-danger border-danger/20" },
 }
+
+const RECORD_STATUS_FALLBACK = { label: "Under Review", style: "bg-ocean/10 text-ocean border-ocean/20" }
 
 const PAYMENT_METHODS = [
   { value: "bank_transfer", label: "Bank Transfer" },
@@ -97,9 +99,46 @@ function PageSkeleton() {
 
 // ── Payment record row (with evidence) ────────────────────────────────────────
 
-function RecordRow({ record }: { record: PaymentRecordOut }) {
+function RecordRow({
+  record,
+  dealId,
+  onUpdate,
+}: {
+  record: PaymentRecordOut
+  dealId: string
+  onUpdate: (updated: PaymentRecordOut) => void
+}) {
   const [open, setOpen] = useState(false)
-  const rs = RECORD_STATUS[record.status] ?? RECORD_STATUS["pending_review"]
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadDone, setUploadDone] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const rs = RECORD_STATUS[record.status] ?? RECORD_STATUS_FALLBACK
+  const canUploadReceipt =
+    record.status === "pending_verification" && record.evidence.length === 0 && !uploadDone
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setIsUploading(true)
+    setUploadError(null)
+    const fd = new FormData()
+    fd.append("file", file)
+    try {
+      await payments.buyer.uploadEvidence(record.id, dealId, fd)
+      setUploadDone(true)
+      // Refresh parent so evidence list updates
+      const updated = { ...record, evidence: [...record.evidence, { id: "new", payment_record_id: record.id, file_name: file.name, file_path: "", file_size_bytes: file.size, mime_type: file.type, uploaded_at: new Date().toISOString() }] }
+      onUpdate(updated)
+    } catch (err) {
+      setUploadError(err instanceof ApiRequestError ? err.message : "Upload failed. Please try again.")
+    } finally {
+      setIsUploading(false)
+      if (fileRef.current) fileRef.current.value = ""
+    }
+  }
+
   return (
     <div className="border border-border rounded-lg overflow-hidden">
       <button
@@ -122,18 +161,22 @@ function RecordRow({ record }: { record: PaymentRecordOut }) {
         <Badge className={cn("text-xs border shrink-0", rs.style)}>{rs.label}</Badge>
         {open ? <ChevronUp className="w-4 h-4 text-text-secondary shrink-0" /> : <ChevronDown className="w-4 h-4 text-text-secondary shrink-0" />}
       </button>
+
       {open && (
-        <div className="px-4 pb-4 pt-0 border-t border-border bg-gray-50/50 space-y-2 text-sm">
-          {record.notes && <p className="text-text-secondary">{record.notes}</p>}
+        <div className="px-4 pb-4 pt-3 border-t border-border bg-gray-50/50 space-y-3">
+          {record.notes && <p className="text-sm text-text-secondary">{record.notes}</p>}
+
           {record.rejection_reason && (
-            <div className="flex items-start gap-2 p-2 bg-danger/5 border border-danger/20 rounded text-danger text-xs">
+            <div className="flex items-start gap-2 p-2.5 bg-danger/5 border border-danger/20 rounded-lg text-danger text-xs">
               <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              <span>Rejection reason: {record.rejection_reason}</span>
+              <span>Rejected: {record.rejection_reason}</span>
             </div>
           )}
+
+          {/* Evidence / receipt */}
           {record.evidence.length > 0 ? (
             <div className="space-y-1">
-              <p className="text-xs text-text-secondary font-medium">Evidence files:</p>
+              <p className="text-xs font-medium text-text-secondary">Receipt</p>
               {record.evidence.map((e) => (
                 <div key={e.id} className="flex items-center gap-2 text-xs text-ocean">
                   <FileText className="w-3 h-3" />
@@ -141,8 +184,38 @@ function RecordRow({ record }: { record: PaymentRecordOut }) {
                 </div>
               ))}
             </div>
+          ) : canUploadReceipt ? (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-text-secondary">
+                Receipt <span className="text-text-secondary/60 font-normal">— not attached yet</span>
+              </p>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.heic"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+              {uploadError && (
+                <p className="text-xs text-danger">{uploadError}</p>
+              )}
+              <button
+                type="button"
+                disabled={isUploading}
+                onClick={() => fileRef.current?.click()}
+                className="flex items-center gap-2 px-3 py-2 w-full border border-dashed border-ocean/40 rounded-lg text-sm text-ocean hover:bg-ocean/5 transition-colors disabled:opacity-50"
+              >
+                {isUploading
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Uploading…</>
+                  : <><Upload className="w-4 h-4" /> Upload payment receipt</>}
+              </button>
+            </div>
+          ) : uploadDone ? (
+            <div className="flex items-center gap-2 text-success text-xs">
+              <CheckCircle2 className="w-3.5 h-3.5" /> Receipt uploaded successfully.
+            </div>
           ) : (
-            <p className="text-xs text-text-secondary/60">No evidence files attached.</p>
+            <p className="text-xs text-text-secondary/60">No receipt attached.</p>
           )}
         </div>
       )}
@@ -167,14 +240,16 @@ function PayPanel({ item, dealId, onSuccess, onClose }: PayPanelProps) {
   const [bankName, setBankName]   = useState("")
   const [bankRef, setBankRef]     = useState("")
   const [notes, setNotes]         = useState("")
+  const [receiptFile, setReceiptFile] = useState<File | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError]         = useState<string | null>(null)
-  const [newRecord, setNewRecord] = useState<PaymentRecordOut | null>(null)
+  const [done, setDone]           = useState(false)
 
-  // Evidence upload after record created
   const fileRef = useRef<HTMLInputElement>(null)
-  const [isUploading, setIsUploading] = useState(false)
-  const [uploadDone, setUploadDone]   = useState(false)
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setReceiptFile(e.target.files?.[0] ?? null)
+  }
 
   const handleSubmit = async () => {
     setIsSubmitting(true)
@@ -189,7 +264,15 @@ function PayPanel({ item, dealId, onSuccess, onClose }: PayPanelProps) {
         bank_reference: bankRef  || undefined,
         notes:          notes    || undefined,
       })
-      setNewRecord(record)
+      // Upload receipt if one was selected
+      if (receiptFile) {
+        const fd = new FormData()
+        fd.append("file", receiptFile)
+        try {
+          await payments.buyer.uploadEvidence(record.id, dealId, fd)
+        } catch { /* receipt upload failure is non-fatal */ }
+      }
+      setDone(true)
     } catch (e) {
       setError(e instanceof ApiRequestError ? e.message : "Failed to submit payment.")
     } finally {
@@ -197,55 +280,20 @@ function PayPanel({ item, dealId, onSuccess, onClose }: PayPanelProps) {
     }
   }
 
-  const handleEvidence = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file || !newRecord) return
-    setIsUploading(true)
-    const fd = new FormData()
-    fd.append("file", file)
-    try {
-      await payments.buyer.uploadEvidence(newRecord.id, dealId, fd)
-      setUploadDone(true)
-    } catch { /* evidence is optional */ }
-    finally {
-      setIsUploading(false)
-      if (fileRef.current) fileRef.current.value = ""
-    }
-  }
-
-  if (newRecord) {
+  if (done) {
     return (
       <div className="p-5 space-y-4">
         <div className="flex items-center gap-3 p-3 bg-success/10 border border-success/20 rounded-lg text-success">
           <CheckCircle2 className="w-5 h-5 shrink-0" />
           <div>
             <p className="text-sm font-semibold">Payment record submitted</p>
-            <p className="text-xs mt-0.5">Our team will verify within 1–2 business days.</p>
+            <p className="text-xs mt-0.5">
+              {receiptFile
+                ? "Receipt uploaded. Our team will verify within 1–2 business days."
+                : "Our team will verify within 1–2 business days."}
+            </p>
           </div>
         </div>
-
-        {!uploadDone ? (
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-text-primary">Attach evidence (optional)</p>
-            <p className="text-xs text-text-secondary">Bank receipt, transfer screenshot, or transaction confirmation.</p>
-            <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={handleEvidence} />
-            <Button
-              variant="outline"
-              className="w-full border-dashed"
-              disabled={isUploading}
-              onClick={() => fileRef.current?.click()}
-            >
-              {isUploading
-                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Uploading…</>
-                : <><Upload className="w-4 h-4 mr-2" /> Upload Evidence</>}
-            </Button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 text-success text-sm">
-            <CheckCircle2 className="w-4 h-4" /> Evidence uploaded successfully.
-          </div>
-        )}
-
         <Button className="w-full bg-ocean hover:bg-ocean-dark text-white" onClick={() => { onSuccess(); onClose() }}>
           Done
         </Button>
@@ -311,7 +359,7 @@ function PayPanel({ item, dealId, onSuccess, onClose }: PayPanelProps) {
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label>Bank Name</Label>
-          <Input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="e.g. First Bank Nigeria" />
+          <Input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="e.g. UBA, First Bank" />
         </div>
         <div className="space-y-1.5">
           <Label>Transaction Reference</Label>
@@ -322,7 +370,41 @@ function PayPanel({ item, dealId, onSuccess, onClose }: PayPanelProps) {
       <div className="space-y-1.5">
         <Label>Notes</Label>
         <Textarea value={notes} onChange={(e) => setNotes(e.target.value)}
-          rows={3} placeholder="Any additional information..." className="resize-none" />
+          rows={2} placeholder="Any additional information..." className="resize-none" />
+      </div>
+
+      {/* Receipt upload */}
+      <div className="space-y-1.5">
+        <Label>Payment Receipt <span className="text-text-secondary font-normal">(optional)</span></Label>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".pdf,.jpg,.jpeg,.png,.heic"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+        {receiptFile ? (
+          <div className="flex items-center gap-2 px-3 py-2.5 border border-success/40 bg-success/5 rounded-lg">
+            <Receipt className="w-4 h-4 text-success shrink-0" />
+            <span className="text-sm text-text-primary flex-1 truncate">{receiptFile.name}</span>
+            <button
+              onClick={() => { setReceiptFile(null); if (fileRef.current) fileRef.current.value = "" }}
+              className="p-0.5 text-text-secondary hover:text-danger transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 border border-dashed border-border rounded-lg text-sm text-text-secondary hover:border-ocean/40 hover:text-ocean hover:bg-ocean/5 transition-colors"
+          >
+            <Upload className="w-4 h-4" />
+            Upload bank receipt or transfer proof
+          </button>
+        )}
+        <p className="text-xs text-text-secondary">PDF, JPG or PNG · max 10 MB</p>
       </div>
 
       <div className="flex gap-2 pt-1">
@@ -903,7 +985,16 @@ export default function DealDetailPage() {
                       {/* Payment records for this item */}
                       {itemRecords.length > 0 && (
                         <div className="ml-11 mt-3 space-y-2">
-                          {itemRecords.map((rec) => <RecordRow key={rec.id} record={rec} />)}
+                          {itemRecords.map((rec) => (
+                            <RecordRow
+                              key={rec.id}
+                              record={rec}
+                              dealId={id}
+                              onUpdate={(updated) =>
+                                setRecords((prev) => prev.map((r) => r.id === updated.id ? updated : r))
+                              }
+                            />
+                          ))}
                         </div>
                       )}
                     </div>

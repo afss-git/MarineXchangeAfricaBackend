@@ -8,7 +8,7 @@ import { TrustSecurity } from "@/components/trust-security"
 import { CTASection } from "@/components/cta-section"
 import { Footer } from "@/components/footer"
 
-export default function MarineXchangeLandingPage() {
+export default function Harbours360LandingPage() {
   return (
     <main className="min-h-screen">
       <Navbar />

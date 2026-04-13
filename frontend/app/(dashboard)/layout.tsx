@@ -306,8 +306,8 @@ export default function DashboardLayout({
             <Anchor className="w-5 h-5 text-white" />
           </div>
           <div className="flex items-baseline tracking-tight">
-            <span className="text-lg font-extrabold text-white">Marine</span>
-            <span className="text-lg font-extrabold text-ocean">Xchange</span>
+            <span className="text-lg font-extrabold text-white">Harbours</span>
+            <span className="text-lg font-extrabold text-ocean">360</span>
           </div>
           <button
             onClick={() => setSidebarOpen(false)}

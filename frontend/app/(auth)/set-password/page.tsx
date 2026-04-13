@@ -79,7 +79,7 @@ export default function SetPasswordPage() {
     <>
       <AuthLeftPanel
         heading="Set Up Your Account"
-        description="You've been invited to join MarineXchange Africa. Create a secure password to activate your staff account."
+        description="You've been invited to join Harbours360. Create a secure password to activate your staff account."
         benefits={[
           "KYC-verified buyers and sellers",
           "Escrow-protected payments",
@@ -139,7 +139,7 @@ export default function SetPasswordPage() {
               <div className="mb-8">
                 <h2 className="text-2xl font-bold text-text-primary mb-2">Create Your Password</h2>
                 <p className="text-text-secondary">
-                  Choose a strong password to activate your MarineXchange Africa account.
+                  Choose a strong password to activate your Harbours360 account.
                 </p>
               </div>
 

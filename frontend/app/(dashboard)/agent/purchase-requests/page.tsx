@@ -1,21 +1,18 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
 import {
-  ClipboardList, Clock, CheckCircle2, XCircle, RefreshCw,
-  ChevronDown, ChevronUp, AlertCircle, Loader2, DollarSign,
-  Package, User, FileText, FileQuestion, Send, Shield,
+  ClipboardList, CheckCircle2, XCircle, RefreshCw,
+  ChevronDown, ChevronUp, AlertCircle, Loader2,
+  Package, FileText, FileQuestion, Send, Shield, ExternalLink,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import {
-  prAgent, kycAgent, AgentAssignedPRItem, AgentAssignedPRDetail,
-  DocumentRequestResponse, DocumentTypeResponse,
+  prAgent, AgentAssignedPRItem, AgentAssignedPRDetail, PRDocRequest,
 } from "@/lib/api"
 import { useAgentPurchaseRequests } from "@/lib/hooks"
 
@@ -32,11 +29,6 @@ function fmtDate(iso: string | null) {
 function fmtCurrency(amount: number | null, currency = "USD") {
   if (!amount) return "—"
   return new Intl.NumberFormat("en-US", { style: "currency", currency, minimumFractionDigits: 0 }).format(amount)
-}
-
-function initials(name: string | null) {
-  if (!name) return "?"
-  return name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
 }
 
 function ErrorBar({ msg }: { msg: string }) {
@@ -74,14 +66,12 @@ interface DraftItem {
   priority: "required" | "recommended"
 }
 
-function DocRequestsPanel({ buyerId }: { buyerId: string }) {
-  const [submissionId, setSubmissionId] = useState<string | null>(null)
-  const [sent, setSent]                 = useState<DocumentRequestResponse[]>([])
-  const [loading, setLoading]           = useState(true)
-  const [error, setError]               = useState<string | null>(null)
-  const [sending, setSending]           = useState(false)
+function DocRequestsPanel({ requestId }: { requestId: string }) {
+  const [sent, setSent]       = useState<PRDocRequest[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState<string | null>(null)
+  const [sending, setSending] = useState(false)
 
-  // Draft list — each row is one document the agent wants to request
   const [drafts, setDrafts] = useState<DraftItem[]>([
     { id: crypto.randomUUID(), name: "", reason: "", priority: "required" },
   ])
@@ -89,9 +79,7 @@ function DocRequestsPanel({ buyerId }: { buyerId: string }) {
   useEffect(() => {
     async function init() {
       try {
-        const sub  = await kycAgent.ensureBuyerSubmission(buyerId)
-        setSubmissionId(sub.submission_id)
-        const reqs = await kycAgent.listDocumentRequests(sub.submission_id)
+        const reqs = await prAgent.listDocumentRequests(requestId)
         setSent(reqs)
       } catch (e: unknown) {
         setError((e as Error)?.message ?? "Failed to load")
@@ -100,7 +88,7 @@ function DocRequestsPanel({ buyerId }: { buyerId: string }) {
       }
     }
     init()
-  }, [buyerId])
+  }, [requestId])
 
   function addRow() {
     setDrafts((prev) => [...prev, { id: crypto.randomUUID(), name: "", reason: "", priority: "required" }])
@@ -116,22 +104,22 @@ function DocRequestsPanel({ buyerId }: { buyerId: string }) {
 
   async function handleSendAll() {
     const valid = drafts.filter((d) => d.name.trim())
-    if (!submissionId || valid.length === 0) {
+    if (valid.length === 0) {
       setError("Add at least one document name before sending.")
       return
     }
     setSending(true)
     setError(null)
     try {
-      const result = await kycAgent.requestDocuments(submissionId,
+      const result = await prAgent.requestDocuments(
+        requestId,
         valid.map((d) => ({
-          custom_document_name: d.name.trim(),
-          reason: d.reason.trim() || undefined,
-          priority: d.priority,
+          document_name: d.name.trim(),
+          reason:        d.reason.trim() || undefined,
+          priority:      d.priority,
         }))
       )
       setSent((prev) => [...prev, ...result])
-      // Reset to one blank row
       setDrafts([{ id: crypto.randomUUID(), name: "", reason: "", priority: "required" }])
     } catch (e: unknown) {
       setError((e as Error)?.message ?? "Failed to send requests")
@@ -140,18 +128,59 @@ function DocRequestsPanel({ buyerId }: { buyerId: string }) {
     }
   }
 
+  async function handleViewDoc(req: PRDocRequest) {
+    try {
+      const token = localStorage.getItem("access_token")
+      const res = await fetch(prAgent.docDownloadUrl(req.id), {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      if (!res.ok) throw new Error(`${res.status}`)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const win = window.open(url, "_blank")
+      // Revoke after 60 s to free memory
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      if (!win) {
+        // Popup blocked — fall back to download
+        const a = document.createElement("a")
+        a.href = url
+        a.download = req.file_name ?? "document"
+        a.click()
+      }
+    } catch (e: unknown) {
+      alert("Could not load document: " + ((e as Error)?.message ?? "unknown error"))
+    }
+  }
+
   async function handleWaive(reqId: string) {
     const waiveReason = prompt("Reason for waiving this request:")
     if (!waiveReason) return
     try {
-      const updated = await kycAgent.waiveDocumentRequest(reqId, waiveReason)
+      const updated = await prAgent.waiveDocumentRequest(reqId, waiveReason)
       setSent((prev) => prev.map((r) => r.id === reqId ? updated : r))
     } catch { /* silent */ }
   }
 
+  async function handleReviewDoc(reqId: string, action: "approve" | "reject") {
+    let notes: string | undefined
+    if (action === "reject") {
+      const input = prompt("Reason for rejection (optional):")
+      if (input === null) return // cancelled
+      notes = input.trim() || undefined
+    }
+    try {
+      const updated = await prAgent.reviewDocumentRequest(reqId, action, notes)
+      setSent((prev) => prev.map((r) => r.id === reqId ? updated : r))
+    } catch (e: unknown) {
+      alert("Review failed: " + ((e as Error)?.message ?? "unknown error"))
+    }
+  }
+
   const STATUS_COLORS: Record<string, string> = {
     pending:  "bg-warning/10 text-warning border-warning/20",
-    uploaded: "bg-success/10 text-success border-success/20",
+    uploaded: "bg-blue-50 text-blue-700 border-blue-200",
+    approved: "bg-success/10 text-success border-success/20",
+    rejected: "bg-danger/10 text-danger border-danger/20",
     waived:   "bg-gray-100 text-gray-500 border-gray-200",
   }
 
@@ -175,11 +204,38 @@ function DocRequestsPanel({ buyerId }: { buyerId: string }) {
               <div key={req.id} className="flex items-center gap-3 px-4 py-3 bg-white">
                 <FileQuestion className="w-4 h-4 text-text-secondary shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{req.document_type_name}</p>
+                  <p className="text-sm font-medium">{req.document_name}</p>
                   {req.reason && <p className="text-xs text-text-secondary">{req.reason}</p>}
                 </div>
                 <Badge className={cn("text-xs border capitalize", STATUS_COLORS[req.status] ?? "")}>{req.status}</Badge>
                 <Badge variant="secondary" className="text-xs capitalize">{req.priority}</Badge>
+                {req.status === "uploaded" && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleViewDoc(req) }}
+                      className="flex items-center gap-1 text-xs text-ocean hover:underline transition-colors"
+                    >
+                      <ExternalLink className="w-3 h-3" /> View
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleReviewDoc(req.id, "approve") }}
+                      className="text-xs font-medium text-success hover:text-success/80 border border-success/30 rounded px-2 py-0.5 transition-colors"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleReviewDoc(req.id, "reject") }}
+                      className="text-xs font-medium text-danger hover:text-danger/80 border border-danger/30 rounded px-2 py-0.5 transition-colors"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                )}
+                {(req.status === "approved" || req.status === "rejected") && req.review_notes && (
+                  <span className="text-xs text-text-secondary italic truncate max-w-30" title={req.review_notes}>
+                    {req.review_notes}
+                  </span>
+                )}
                 {req.status === "pending" && (
                   <button onClick={() => handleWaive(req.id)} className="text-xs text-text-secondary hover:text-danger transition-colors">
                     Waive
@@ -255,7 +311,7 @@ function DocRequestsPanel({ buyerId }: { buyerId: string }) {
           {error && <div className="mb-3"><ErrorBar msg={error} /></div>}
           <Button
             onClick={handleSendAll}
-            disabled={sending || !submissionId || drafts.every((d) => !d.name.trim())}
+            disabled={sending || drafts.every((d) => !d.name.trim())}
             className="bg-ocean hover:bg-ocean-dark text-white gap-1.5 w-full sm:w-auto"
           >
             {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
@@ -281,7 +337,7 @@ function PRPanel({ item, onReported }: {
   // Report form
   const [financialCapacity, setFinancialCapacity] = useState("")
   const [riskRating, setRiskRating]               = useState<"low" | "medium" | "high">("low")
-  const [recommendation, setRecommendation]       = useState<"recommend_approve" | "recommend_reject">("recommend_approve")
+  const [recommendation, setRecommendation]       = useState<"approve" | "reject" | "requires_resubmission">("approve")
   const [verificationNotes, setVerificationNotes] = useState("")
   const [submitting, setSubmitting]               = useState(false)
   const [reportError, setReportError]             = useState<string | null>(null)
@@ -355,11 +411,82 @@ function PRPanel({ item, onReported }: {
 
       {/* Document requests tab */}
       {activeTab === "documents" && (
-        <DocRequestsPanel buyerId={item.buyer_id} />
+        <DocRequestsPanel requestId={item.id} />
       )}
 
       {/* Report tab */}
       {activeTab === "report" && <>
+      {/* Product + Buyer info */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 px-5 py-4 bg-gray-50/50 text-sm border-b border-border">
+        {detail.product_description && (
+          <div className="col-span-2 sm:col-span-3">
+            <p className="text-xs text-text-secondary mb-0.5">Product Description</p>
+            <p className="text-sm text-text-primary leading-relaxed">{detail.product_description}</p>
+          </div>
+        )}
+        {detail.product_condition && (
+          <div>
+            <p className="text-xs text-text-secondary mb-0.5">Condition</p>
+            <p className="font-medium text-text-primary capitalize">{detail.product_condition.replace(/_/g, " ")}</p>
+          </div>
+        )}
+        {detail.product_asking_price && (
+          <div>
+            <p className="text-xs text-text-secondary mb-0.5">Asking Price</p>
+            <p className="font-medium text-text-primary">{fmtCurrency(Number(detail.product_asking_price), detail.product_currency ?? "USD")}</p>
+          </div>
+        )}
+        {(detail.product_location_country || detail.product_location_port) && (
+          <div>
+            <p className="text-xs text-text-secondary mb-0.5">Location</p>
+            <p className="font-medium text-text-primary">
+              {[detail.product_location_port, detail.product_location_country].filter(Boolean).join(", ")}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Buyer details */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 px-5 py-4 bg-ocean/3 text-sm border-b border-border">
+        <p className="col-span-2 sm:col-span-3 text-xs font-semibold text-text-secondary uppercase tracking-wide">Buyer Information</p>
+        <div>
+          <p className="text-xs text-text-secondary mb-0.5">Name</p>
+          <p className="font-medium text-text-primary">{detail.buyer_name ?? "—"}</p>
+        </div>
+        {detail.buyer_company && (
+          <div>
+            <p className="text-xs text-text-secondary mb-0.5">Company</p>
+            <p className="font-medium text-text-primary">{detail.buyer_company}</p>
+          </div>
+        )}
+        {detail.buyer_email && (
+          <div>
+            <p className="text-xs text-text-secondary mb-0.5">Email</p>
+            <p className="font-medium text-text-primary">{detail.buyer_email}</p>
+          </div>
+        )}
+        {detail.buyer_phone && (
+          <div>
+            <p className="text-xs text-text-secondary mb-0.5">Phone</p>
+            <p className="font-medium text-text-primary">{detail.buyer_phone}</p>
+          </div>
+        )}
+        <div>
+          <p className="text-xs text-text-secondary mb-0.5">KYC Status</p>
+          <p className={cn("font-medium capitalize", {
+            "text-success": detail.buyer_kyc_status === "approved",
+            "text-warning": ["pending","under_review"].includes(detail.buyer_kyc_status ?? ""),
+            "text-danger": detail.buyer_kyc_status === "rejected",
+          })}>
+            {(detail.buyer_kyc_status ?? "unknown").replace(/_/g, " ")}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs text-text-secondary mb-0.5">Assignment Status</p>
+          <p className="font-medium text-text-primary capitalize">{(detail.assignment_status ?? "pending").replace(/_/g, " ")}</p>
+        </div>
+      </div>
+
       {/* Request details */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 px-5 py-4 bg-gray-50/50 text-sm">
         <div>
@@ -375,10 +502,6 @@ function PRPanel({ item, onReported }: {
         <div>
           <p className="text-xs text-text-secondary mb-0.5">Quantity</p>
           <p className="font-medium text-text-primary">{detail.quantity}</p>
-        </div>
-        <div>
-          <p className="text-xs text-text-secondary mb-0.5">Assignment Status</p>
-          <p className="font-medium text-text-primary capitalize">{(detail.assignment_status ?? "pending").replace(/_/g, " ")}</p>
         </div>
       </div>
 
@@ -406,11 +529,18 @@ function PRPanel({ item, onReported }: {
               })}>
                 {detail.my_report.risk_rating} risk
               </Badge>
-              <Badge className={cn("text-xs border", detail.my_report.recommendation === "recommend_approve"
-                ? "bg-success/10 text-success border-success/20"
-                : "bg-danger/10 text-danger border-danger/20"
+              <Badge className={cn("text-xs border",
+                detail.my_report.recommendation === "approve"
+                  ? "bg-success/10 text-success border-success/20"
+                  : detail.my_report.recommendation === "requires_resubmission"
+                  ? "bg-warning/10 text-warning border-warning/20"
+                  : "bg-danger/10 text-danger border-danger/20"
               )}>
-                {detail.my_report.recommendation === "recommend_approve" ? "Recommend Approve" : "Recommend Reject"}
+                {{
+                  approve: "Recommend Approve",
+                  reject: "Recommend Reject",
+                  requires_resubmission: "Requires Resubmission",
+                }[detail.my_report.recommendation] ?? detail.my_report.recommendation}
               </Badge>
             </div>
             <p className="text-text-secondary">{detail.my_report.verification_notes}</p>
@@ -471,20 +601,20 @@ function PRPanel({ item, onReported }: {
           <div>
             <label className="text-xs font-medium text-text-secondary block mb-1.5">Recommendation</label>
             <div className="flex gap-2">
-              {(["recommend_approve", "recommend_reject"] as const).map((rec) => (
+              {([
+                { value: "approve",              label: "Recommend Approve",    active: "bg-success text-white border-success" },
+                { value: "reject",               label: "Recommend Reject",     active: "bg-danger text-white border-danger" },
+                { value: "requires_resubmission",label: "Requires Resubmission",active: "bg-warning text-white border-warning" },
+              ] as const).map(({ value, label, active }) => (
                 <button
-                  key={rec}
-                  onClick={() => setRecommendation(rec)}
+                  key={value}
+                  onClick={() => setRecommendation(value)}
                   className={cn(
                     "px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors",
-                    recommendation === rec
-                      ? rec === "recommend_approve"
-                        ? "bg-success text-white border-success"
-                        : "bg-danger text-white border-danger"
-                      : "bg-white text-text-secondary border-border hover:border-gray-300"
+                    recommendation === value ? active : "bg-white text-text-secondary border-border hover:border-gray-300"
                   )}
                 >
-                  {rec === "recommend_approve" ? "Recommend Approve" : "Recommend Reject"}
+                  {label}
                 </button>
               ))}
             </div>
@@ -588,8 +718,11 @@ export default function AgentPurchaseRequestsPage() {
                   className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-gray-50 transition-colors"
                   onClick={() => setExpanded(isOpen ? null : item.id)}
                 >
-                  <div className="w-10 h-10 rounded-xl bg-ocean/10 flex items-center justify-center shrink-0">
-                    <Package className="w-5 h-5 text-ocean" />
+                  {/* Product image */}
+                  <div className="w-14 h-14 rounded-xl bg-gray-100 shrink-0 overflow-hidden flex items-center justify-center">
+                    {item.product_image_url
+                      ? <img src={item.product_image_url} alt={item.product_title ?? ""} className="w-full h-full object-cover" />
+                      : <Package className="w-6 h-6 text-gray-300" />}
                   </div>
 
                   <div className="flex-1 min-w-0">
@@ -600,13 +733,31 @@ export default function AgentPurchaseRequestsPage() {
                       <Badge variant="secondary" className="text-xs capitalize">
                         {item.purchase_type.replace(/_/g, " ")}
                       </Badge>
+                      {/* KYC status inline */}
+                      {item.buyer_kyc_status && (
+                        <Badge className={cn("text-xs border capitalize", {
+                          "bg-success/10 text-success border-success/20": item.buyer_kyc_status === "approved",
+                          "bg-warning/10 text-warning border-warning/20": item.buyer_kyc_status === "pending" || item.buyer_kyc_status === "under_review",
+                          "bg-danger/10 text-danger border-danger/20": item.buyer_kyc_status === "rejected",
+                        })}>
+                          KYC: {item.buyer_kyc_status.replace(/_/g, " ")}
+                        </Badge>
+                      )}
                     </div>
-                    <p className="text-xs text-text-secondary truncate">
+                    <p className="text-xs text-text-secondary truncate mt-0.5">
                       {item.buyer_name ?? "Unknown buyer"}
-                      {" "}· Price: {fmtCurrency(item.offered_price, item.offered_currency)}
+                      {item.buyer_company ? ` · ${item.buyer_company}` : ""}
+                      {" "}· {fmtCurrency(item.offered_price, item.offered_currency)}
                       {" "}· Qty: {item.quantity}
                       {" "}· {fmtDate(item.created_at)}
                     </p>
+                    {(item.product_location_country || item.product_location_port) && (
+                      <p className="text-xs text-text-secondary truncate">
+                        {[item.product_location_port, item.product_location_country].filter(Boolean).join(", ")}
+                        {item.product_condition ? ` · ${item.product_condition}` : ""}
+                        {item.product_asking_price ? ` · Ask: ${fmtCurrency(Number(item.product_asking_price), item.product_currency ?? "USD")}` : ""}
+                      </p>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-3 shrink-0">

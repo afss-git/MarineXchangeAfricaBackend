@@ -1,5 +1,5 @@
 /**
- * API client for MarineXchange Africa backend.
+ * API client for Harbours360 backend.
  * All requests go through Next.js rewrites → http://localhost:8000/api/v1
  */
 
@@ -175,6 +175,7 @@ export interface PurchaseRequest {
   id: string
   product_id: string
   product_title: string | null
+  product_primary_image_url: string | null
   buyer_id: string
   purchase_type: string
   quantity: number
@@ -197,26 +198,70 @@ export interface PurchaseRequestList {
 
 // ── Deal types ────────────────────────────────────────────────────────────────
 
+/** Returned by GET /deals/my and GET /deals/my-sales (list endpoints) */
 export interface Deal {
   id: string
-  reference: string
-  product_id: string
+  deal_ref: string
+  deal_type: string
   product_title: string | null
-  buyer_id: string
-  seller_id: string
+  buyer_name: string | null
+  seller_name: string | null
   status: string
-  current_milestone: string | null
-  asking_price: string
-  agreed_price: string | null
+  total_price: string
   currency: string
-  escrow_status: string | null
   created_at: string
   updated_at: string
 }
 
-export interface DealList {
-  items: Deal[]
-  total: number
+/** Returned by GET /deals/my/{id} (full detail for buyer) */
+export interface DealDetail {
+  id: string
+  deal_ref: string
+  deal_type: string
+  product_id: string
+  buyer_id: string
+  seller_id: string
+  purchase_request_id: string | null
+  status: string
+  total_price: string
+  currency: string
+  payment_deadline: string | null
+  payment_instructions: string | null
+  initial_payment_percent: string | null
+  initial_payment_amount: string | null
+  financed_amount: string | null
+  monthly_finance_rate: string | null
+  duration_months: number | null
+  arrangement_fee: string
+  total_finance_charge: string | null
+  total_amount_payable: string | null
+  first_monthly_payment: string | null
+  initial_payment_due: string | null
+  accepted_at: string | null
+  requires_second_approval: boolean
+  admin_notes: string | null
+  cancellation_reason: string | null
+  // Enriched
+  buyer_name: string | null
+  buyer_email: string | null
+  seller_name: string | null
+  product_title: string | null
+  product_primary_image_url: string | null
+  payment_account: {
+    id: string
+    bank_name: string | null
+    account_name: string | null
+    account_number: string | null
+    sort_code: string | null
+    swift_code: string | null
+    iban: string | null
+    routing_number: string | null
+    currency: string | null
+    country: string | null
+    additional_info: string | null
+  } | null
+  created_at: string
+  updated_at: string
 }
 
 // ── Seller listing types ──────────────────────────────────────────────────────
@@ -295,33 +340,30 @@ export class ApiRequestError extends Error {
 }
 
 // ── Token refresh ─────────────────────────────────────────────────────────────
+//
+// SECURITY: Tokens are stored in HttpOnly cookies set by the backend.
+// The browser sends them automatically — no JavaScript can read them.
+// The refresh call uses credentials: "include" so the refresh_token cookie
+// is sent automatically. No token is ever stored in localStorage.
 
-// "server_down" means the refresh endpoint was unreachable — not a genuine auth failure
 type RefreshResult = true | false | "server_down"
 let _refreshing: Promise<RefreshResult> | null = null
 
 async function tryRefreshToken(): Promise<RefreshResult> {
-  // Deduplicate concurrent refresh attempts
   if (_refreshing) return _refreshing
   _refreshing = (async (): Promise<RefreshResult> => {
     try {
-      const refreshToken = localStorage.getItem("refresh_token")
-      if (!refreshToken) return false
       const res = await fetch(`${API_BASE}/auth/refresh`, {
         method: "POST",
+        credentials: "include",                         // sends refresh_token cookie
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: refreshToken }),
+        body: JSON.stringify({}),                       // body required by FastAPI, token comes from cookie
       })
-      // 401/403 = refresh token definitely expired/invalid
-      // Any other non-ok status = server temporarily down, not a real auth failure
+      // 401/403 = refresh token genuinely expired or missing
       if (!res.ok) return res.status === 401 || res.status === 403 ? false : "server_down"
-      const data = await res.json()
-      localStorage.setItem("access_token",      data.access_token)
-      localStorage.setItem("refresh_token",     data.refresh_token)
-      localStorage.setItem("token_expires_at",  String(Date.now() + data.expires_in * 1000))
+      // Backend sets new access_token + refresh_token cookies automatically
       return true
     } catch {
-      // Network error — server unreachable, not a definitive auth failure
       return "server_down"
     } finally {
       _refreshing = null
@@ -331,7 +373,10 @@ async function tryRefreshToken(): Promise<RefreshResult> {
 }
 
 
-// ── Fetch wrapper ────────────────────────────────────────────────────────────
+// ── Fetch wrapper ─────────────────────────────────────────────────────────────
+//
+// All requests use credentials: "include" so HttpOnly auth cookies are sent.
+// No Authorization header is manually set — the browser handles it via cookies.
 
 async function request<T>(
   path: string,
@@ -345,31 +390,23 @@ async function request<T>(
     ...(options.headers as Record<string, string> | undefined),
   }
 
-  // Attach token if available (client-side only)
-  if (typeof window !== "undefined") {
-    const token = localStorage.getItem("access_token")
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`
-    }
-  }
+  const res = await fetch(url, {
+    ...options,
+    headers,
+    credentials: "include",   // HttpOnly cookies sent automatically — no localStorage needed
+  })
 
-  const res = await fetch(url, { ...options, headers })
-
-  // Handle no-content responses
   if (res.status === 204) return undefined as T
 
   // Auto-refresh on 401 — but not for auth endpoints or retry loops
-  if (res.status === 401 && !_isRetry && typeof window !== "undefined" && !path.startsWith("/auth/")) {
+  if (res.status === 401 && !_isRetry && !path.startsWith("/auth/")) {
     const refreshResult = await tryRefreshToken()
     if (refreshResult === true) {
       return request<T>(path, options, true)
     }
     if (refreshResult === "server_down") {
-      // Backend is temporarily unreachable — throw 503 so the UI shows "try again"
-      // instead of redirecting to login (the user's session may still be valid)
       throw new ApiRequestError(503, { detail: "Service temporarily unavailable. Please try again in a moment." })
     }
-    // refreshResult === false: refresh token genuinely expired — fall through to throw 401
   }
 
   const body = await res.json().catch(() => null)
@@ -384,12 +421,7 @@ async function request<T>(
 // Binary/blob fetch (for streaming document endpoints)
 async function fetchBlob(path: string): Promise<{ blob: Blob; mimeType: string }> {
   const url = `${API_BASE}${path}`
-  const headers: Record<string, string> = {}
-  if (typeof window !== "undefined") {
-    const token = localStorage.getItem("access_token")
-    if (token) headers["Authorization"] = `Bearer ${token}`
-  }
-  const res = await fetch(url, { headers })
+  const res = await fetch(url, { credentials: "include" })
   if (!res.ok) {
     const body = await res.json().catch(() => null)
     throw new ApiRequestError(res.status, body)
@@ -401,14 +433,13 @@ async function fetchBlob(path: string): Promise<{ blob: Blob; mimeType: string }
 // Multipart upload helper (no Content-Type header — browser sets boundary)
 async function upload<T>(path: string, formData: FormData, _isRetry = false): Promise<T> {
   const url = `${API_BASE}${path}`
-  const headers: Record<string, string> = {}
-  if (typeof window !== "undefined") {
-    const token = localStorage.getItem("access_token")
-    if (token) headers["Authorization"] = `Bearer ${token}`
-  }
-  const res = await fetch(url, { method: "POST", headers, body: formData })
+  const res = await fetch(url, {
+    method: "POST",
+    body: formData,
+    credentials: "include",   // HttpOnly cookie sent automatically
+  })
 
-  if (res.status === 401 && !_isRetry && typeof window !== "undefined") {
+  if (res.status === 401 && !_isRetry) {
     const refreshResult = await tryRefreshToken()
     if (refreshResult === true) return upload<T>(path, formData, true)
     if (refreshResult === "server_down") {
@@ -782,7 +813,7 @@ export const deals = {
       })
     }
     const query = qs.toString() ? `?${qs}` : ""
-    return request<DealList>(`/deals/my${query}`)
+    return request<Deal[]>(`/deals/my${query}`)
   },
 
   listMySales: (params?: { page?: number; page_size?: number; status?: string }) => {
@@ -793,8 +824,11 @@ export const deals = {
       })
     }
     const query = qs.toString() ? `?${qs}` : ""
-    return request<DealList>(`/deals/my-sales${query}`)
+    return request<Deal[]>(`/deals/my-sales${query}`)
   },
+
+  getMyDeal: (dealId: string) =>
+    request<DealDetail>(`/deals/my/${dealId}`),
 
   get: (token: string) =>
     request<Deal>(`/deals/portal/${token}`),
@@ -1135,6 +1169,9 @@ export const payments = {
 
     getSummary: (dealId: string) =>
       request<DealPaymentSummary>(`/payments/admin/deals/${dealId}/summary`),
+
+    getEvidenceDownloadUrl: (evidenceId: string) =>
+      request<{ signed_url: string }>(`/payments/admin/evidence/${evidenceId}/download`),
   },
 }
 
@@ -1591,6 +1628,7 @@ export interface DealResponse {
   buyer_phone: string | null
   seller_name: string | null
   product_title: string | null
+  product_primary_image_url: string | null
   payment_account: PaymentAccountOut | null
   initial_payment_due: string | null
 }
@@ -1715,6 +1753,11 @@ export const dealAdmin = {
   secondApprove: (id: string, notes?: string) =>
     request<DealResponse>(`/deals/${id}/second-approve`, {
       method: "POST", body: JSON.stringify({ notes: notes ?? null }),
+    }),
+
+  markAccepted: (id: string, notes: string) =>
+    request<DealResponse>(`/deals/${id}/mark-accepted`, {
+      method: "POST", body: JSON.stringify({ notes }),
     }),
 
   recordPayment: (id: string, formData: FormData) =>
@@ -2584,7 +2627,7 @@ export interface KycAgentReviewRequest {
   risk_score: "low" | "medium" | "high"
   is_pep: boolean
   sanctions_match: boolean
-  recommendation: "recommend_approve" | "recommend_reject" | "requires_resubmission"
+  recommendation: "approve" | "reject" | "requires_resubmission"
   notes?: string
 }
 
@@ -2766,7 +2809,7 @@ export interface AgentAssignmentInfo {
 export interface AgentReportInfo {
   id: string; agent_id: string; agent_name: string | null
   financial_capacity_usd: string; risk_rating: "low" | "medium" | "high"
-  recommendation: "recommend_approve" | "recommend_reject"
+  recommendation: "approve" | "reject" | "requires_resubmission"
   verification_notes: string; created_at: string
 }
 
@@ -2859,13 +2902,26 @@ export const prAdmin = {
   }) => request<ConvertToDealResponse>(`/purchase-requests/admin/${id}/convert`, {
     method: "POST", body: JSON.stringify(data),
   }),
+
+  listDocumentRequests: (requestId: string) =>
+    request<PRDocRequest[]>(`/purchase-requests/admin/${requestId}/document-requests`),
+
+  docDownloadUrl: (docReqId: string) =>
+    `/api/v1/purchase-requests/admin/document-requests/${docReqId}/download`,
 }
 
 // ── Purchase Requests Agent types ─────────────────────────────────────────────
 
 export interface AgentAssignedPRItem {
-  id: string; buyer_name: string | null; buyer_id: string
+  id: string; buyer_id: string
+  buyer_name: string | null; buyer_email: string | null
+  buyer_phone: string | null; buyer_company: string | null
+  buyer_kyc_status: string | null
   product_id: string; product_title: string | null
+  product_image_url: string | null
+  product_description: string | null; product_condition: string | null
+  product_asking_price: string | null; product_currency: string | null
+  product_location_country: string | null; product_location_port: string | null
   status: string; purchase_type: string
   quantity: number; offered_price: number | null; offered_currency: string
   message: string | null
@@ -2879,6 +2935,25 @@ export interface AgentAssignedPRDetail extends AgentAssignedPRItem {
 
 // ── Purchase Requests Agent module ────────────────────────────────────────────
 
+export interface PRDocRequest {
+  id: string
+  request_id: string
+  agent_id: string
+  agent_name: string | null
+  document_name: string
+  reason: string | null
+  priority: "required" | "recommended"
+  status: "pending" | "uploaded" | "approved" | "rejected" | "waived"
+  waive_reason: string | null
+  review_notes: string | null
+  file_name: string | null
+  signed_url: string | null
+  fulfilled_at: string | null
+  waived_at: string | null
+  reviewed_at: string | null
+  created_at: string
+}
+
 export const prAgent = {
   listAssigned: () =>
     request<{ items: AgentAssignedPRItem[]; total: number }>("/purchase-requests/agent/assigned"),
@@ -2889,11 +2964,47 @@ export const prAgent = {
   submitReport: (id: string, data: {
     financial_capacity_usd: number
     risk_rating: "low" | "medium" | "high"
-    recommendation: "recommend_approve" | "recommend_reject"
+    recommendation: "approve" | "reject" | "requires_resubmission"
     verification_notes: string
   }) => request<AgentReportInfo>(`/purchase-requests/agent/${id}/report`, {
     method: "POST", body: JSON.stringify(data),
   }),
+
+  requestDocuments: (requestId: string, items: { document_name: string; reason?: string; priority: "required" | "recommended" }[]) =>
+    request<PRDocRequest[]>(`/purchase-requests/agent/${requestId}/document-requests`, {
+      method: "POST", body: JSON.stringify(items),
+    }),
+
+  listDocumentRequests: (requestId: string) =>
+    request<PRDocRequest[]>(`/purchase-requests/agent/${requestId}/document-requests`),
+
+  waiveDocumentRequest: (docReqId: string, reason: string) =>
+    request<PRDocRequest>(`/purchase-requests/agent/document-requests/${docReqId}/waive`, {
+      method: "POST", body: JSON.stringify({ reason }),
+    }),
+
+  /** Returns a URL to stream the document through the backend (avoids CORS issues). */
+  docDownloadUrl: (docReqId: string) =>
+    `/api/v1/purchase-requests/agent/document-requests/${docReqId}/download`,
+
+  reviewDocumentRequest: (docReqId: string, action: "approve" | "reject", notes?: string) =>
+    request<PRDocRequest>(`/purchase-requests/agent/document-requests/${docReqId}/review`, {
+      method: "POST", body: JSON.stringify({ action, notes }),
+    }),
+}
+
+export const prBuyer = {
+  listDocumentRequests: (requestId: string) =>
+    request<PRDocRequest[]>(`/purchase-requests/${requestId}/document-requests`),
+
+  fulfillDocumentRequest: (requestId: string, docReqId: string, file: File) => {
+    const fd = new FormData()
+    fd.append("file", file)
+    return upload<PRDocRequest>(
+      `/purchase-requests/${requestId}/document-requests/${docReqId}/fulfill`,
+      fd,
+    )
+  },
 }
 
 

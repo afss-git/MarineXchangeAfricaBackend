@@ -318,7 +318,7 @@ export default function ProfilePage() {
             <div data-tour="profile-upgrade-seller" className="p-4 rounded-xl border border-ocean/30 bg-ocean/5 space-y-2">
               <div className="flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-ocean" />
-                <p className="text-sm font-semibold text-text-primary">Sell on MarineXchange</p>
+                <p className="text-sm font-semibold text-text-primary">Sell on Harbours360</p>
               </div>
               <p className="text-xs text-text-secondary">
                 Add a Seller role to your account to list fishing vessels, equipment, and marine products on the platform.

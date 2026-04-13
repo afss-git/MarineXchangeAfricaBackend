@@ -152,7 +152,7 @@ export const DEALS_TOUR: TourStep[] = [
     selector: "deals-escrow-footer",
     title: "Escrow Protected",
     description:
-      "Every deal on MarineXchange is escrow-protected. Funds are held securely until all agreed conditions are met and both parties confirm. You are never exposed.",
+      "Every deal on Harbours360 is escrow-protected. Funds are held securely until all agreed conditions are met and both parties confirm. You are never exposed.",
   },
 ];
 
@@ -187,6 +187,6 @@ export const PROFILE_TOUR: TourStep[] = [
     selector: "profile-upgrade-seller",
     title: "Want to Sell Too?",
     description:
-      "You can also list assets on MarineXchange. Tap 'Upgrade to Seller' to add seller capabilities to your account at no cost — list vessels, equipment, and parts.",
+      "You can also list assets on Harbours360. Tap 'Upgrade to Seller' to add seller capabilities to your account at no cost — list vessels, equipment, and parts.",
   },
 ];

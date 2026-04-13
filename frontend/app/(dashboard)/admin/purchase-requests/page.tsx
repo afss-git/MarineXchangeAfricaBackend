@@ -6,6 +6,7 @@ import {
   AlertCircle, Loader2, ChevronDown, ChevronUp, UserCheck,
   Handshake, Package, DollarSign, MessageSquare, ShieldAlert,
   ZoomIn, X, ChevronLeft, ChevronRight, MapPin, Phone, Globe, Building2,
+  FileQuestion, ExternalLink,
 } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -18,6 +19,7 @@ import {
   admin,
   marketplace,
   PurchaseRequestAdminDetail,
+  PRDocRequest,
   AdminUserItem,
   ProductDetail,
   ProductImage,
@@ -59,10 +61,11 @@ function ErrorBar({ msg }: { msg: string }) {
 const STATUS_CFG: Record<string, { label: string; className: string }> = {
   submitted:      { label: "Submitted",      className: "bg-warning/10 text-warning border-warning/20" },
   agent_assigned: { label: "Agent Assigned", className: "bg-ocean/10 text-ocean border-ocean/20" },
+  docs_requested: { label: "Docs Requested", className: "bg-warning/10 text-warning border-warning/20" },
   under_review:   { label: "Under Review",   className: "bg-ocean/10 text-ocean border-ocean/20" },
-  accepted:       { label: "Accepted",       className: "bg-success/10 text-success border-success/20" },
+  approved:       { label: "Approved",       className: "bg-success/10 text-success border-success/20" },
   rejected:       { label: "Rejected",       className: "bg-danger/10 text-danger border-danger/20" },
-  deal_created:   { label: "Deal Created",   className: "bg-navy/10 text-navy border-navy/20" },
+  converted:      { label: "Deal Created",   className: "bg-navy/10 text-navy border-navy/20" },
   cancelled:      { label: "Cancelled",      className: "bg-gray-100 text-gray-500 border-gray-200" },
 }
 
@@ -146,6 +149,88 @@ function Lightbox({ images, index, onClose, onNav }: {
           <ChevronRight className="w-7 h-7" />
         </button>
       )}
+    </div>
+  )
+}
+
+// ── Admin: Document Requests sub-panel ────────────────────────────────────────
+
+function AdminDocRequestsSection({ requestId }: { requestId: string }) {
+  const [docs, setDocs]       = useState<PRDocRequest[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    prAdmin.listDocumentRequests(requestId)
+      .then(setDocs)
+      .catch(() => {/* no doc requests yet */})
+      .finally(() => setLoading(false))
+  }, [requestId])
+
+  async function handleView(doc: PRDocRequest) {
+    try {
+      const token = localStorage.getItem("access_token")
+      const res = await fetch(prAdmin.docDownloadUrl(doc.id), {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      if (!res.ok) throw new Error(`${res.status}`)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const win = window.open(url, "_blank")
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      if (!win) {
+        const a = document.createElement("a")
+        a.href = url; a.download = doc.file_name ?? "document"; a.click()
+      }
+    } catch (e: unknown) {
+      alert("Could not load document: " + ((e as Error)?.message ?? "unknown"))
+    }
+  }
+
+  if (loading) return null
+  if (docs.length === 0) return null
+
+  const STATUS_COLORS: Record<string, string> = {
+    pending:  "bg-warning/10 text-warning border-warning/20",
+    uploaded: "bg-blue-50 text-blue-700 border-blue-200",
+    approved: "bg-success/10 text-success border-success/20",
+    rejected: "bg-danger/10 text-danger border-danger/20",
+    waived:   "bg-gray-100 text-gray-500 border-gray-200",
+  }
+
+  return (
+    <div className="px-5 py-4">
+      <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-3">
+        Agent Document Requests ({docs.length})
+      </p>
+      <div className="divide-y divide-border rounded-xl border border-border overflow-hidden">
+        {docs.map((doc) => (
+          <div key={doc.id} className="flex items-center gap-3 px-4 py-3 bg-white">
+            <FileQuestion className="w-4 h-4 text-text-secondary shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{doc.document_name}</p>
+              {doc.reason && <p className="text-xs text-text-secondary truncate">{doc.reason}</p>}
+              {doc.review_notes && (
+                <p className="text-xs text-text-secondary italic mt-0.5 truncate">Note: {doc.review_notes}</p>
+              )}
+            </div>
+            <Badge className={cn("text-xs border capitalize shrink-0", STATUS_COLORS[doc.status] ?? "")}>
+              {doc.status}
+            </Badge>
+            <Badge variant="secondary" className="text-xs capitalize shrink-0">{doc.priority}</Badge>
+            {doc.agent_name && (
+              <span className="text-xs text-text-secondary shrink-0">{doc.agent_name}</span>
+            )}
+            {["uploaded", "approved", "rejected"].includes(doc.status) && doc.file_name && (
+              <button
+                onClick={() => handleView(doc)}
+                className="flex items-center gap-1 text-xs text-ocean hover:underline shrink-0"
+              >
+                <ExternalLink className="w-3 h-3" /> View
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -262,9 +347,9 @@ function PRPanel({ item, agents, onActioned }: {
   )
   if (loadError) return <div className="p-5 border-t border-border"><ErrorBar msg={loadError} /></div>
 
-  const canAssign  = ["submitted", "agent_assigned"].includes(detail.status)
-  const canDecide  = ["submitted", "agent_assigned", "under_review"].includes(detail.status)
-  const canConvert = detail.status === "accepted" && !detail.converted_deal_id
+  const canAssign  = ["submitted", "agent_assigned", "docs_requested", "under_review"].includes(detail.status)
+  const canDecide  = ["submitted", "agent_assigned", "docs_requested", "under_review"].includes(detail.status)
+  const canConvert = detail.status === "approved" && !detail.converted_deal_id
   const hasReport  = !!detail.agent_report
   // Use the full product data fetched from marketplace API (same as marketplace page)
   const askingPrice    = product?.asking_price    ?? detail.product_asking_price
@@ -552,11 +637,14 @@ function PRPanel({ item, agents, onActioned }: {
               })}>
                 {detail.agent_report.risk_rating} risk
               </Badge>
-              <Badge className={cn("text-xs border", detail.agent_report.recommendation === "recommend_approve"
-                ? "bg-success/10 text-success border-success/20"
-                : "bg-danger/10 text-danger border-danger/20"
+              <Badge className={cn("text-xs border",
+                detail.agent_report.recommendation === "approve"
+                  ? "bg-success/10 text-success border-success/20"
+                  : detail.agent_report.recommendation === "requires_resubmission"
+                  ? "bg-warning/10 text-warning border-warning/20"
+                  : "bg-danger/10 text-danger border-danger/20"
               )}>
-                {detail.agent_report.recommendation === "recommend_approve" ? "Recommend Approve" : "Recommend Reject"}
+                {{ approve: "Recommend Approve", reject: "Recommend Reject", requires_resubmission: "Requires Resubmission" }[detail.agent_report.recommendation] ?? detail.agent_report.recommendation}
               </Badge>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -578,6 +666,9 @@ function PRPanel({ item, agents, onActioned }: {
           </div>
         </div>
       )}
+
+      {/* ── Agent Document Requests ───────────────────────────────────────── */}
+      <AdminDocRequestsSection requestId={detail.id} />
 
       {/* ── Assign / Reassign Agent ────────────────────────────────────────── */}
       {canAssign && (
@@ -723,7 +814,7 @@ function PRPanel({ item, agents, onActioned }: {
           </p>
         </div>
       )}
-      {detail.status === "deal_created" && detail.converted_deal_id && (
+      {detail.status === "converted" && detail.converted_deal_id && (
         <div className="px-5 py-3 bg-success/5">
           <p className="text-sm text-success flex items-center gap-1.5">
             <CheckCircle2 className="w-4 h-4" /> Deal created.{" "}
@@ -768,10 +859,11 @@ const STATUS_TABS = [
   { value: "",               label: "All" },
   { value: "submitted",      label: "Submitted" },
   { value: "agent_assigned", label: "Agent Assigned" },
+  { value: "docs_requested", label: "Docs Requested" },
   { value: "under_review",   label: "Under Review" },
-  { value: "accepted",       label: "Accepted" },
+  { value: "approved",       label: "Approved" },
   { value: "rejected",       label: "Rejected" },
-  { value: "deal_created",   label: "Deal Created" },
+  { value: "converted",      label: "Deal Created" },
 ]
 
 export default function AdminPurchaseRequestsPage() {

@@ -63,7 +63,7 @@ function AccountForm({
       <div className="grid grid-cols-2 gap-3">
         {([
           ["bank_name", "Bank Name", "e.g. Standard Bank"],
-          ["account_name", "Account Name", "e.g. MarineXchange Ltd"],
+          ["account_name", "Account Name", "e.g. Harbours360 Ltd"],
           ["account_number", "Account Number", ""],
           ["sort_code", "Sort Code", ""],
           ["swift_code", "SWIFT / BIC", ""],

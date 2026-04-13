@@ -200,8 +200,8 @@ function PageLoaderOverlay() {
 
       {/* Brand wordmark */}
       <p className="mt-5 text-sm font-semibold tracking-widest uppercase select-none">
-        <span style={{ color: "#e0eaf5" }}>Marine</span>
-        <span style={{ color: "#0EA5E9" }}>Xchange</span>
+        <span style={{ color: "#e0eaf5" }}>Harbours</span>
+        <span style={{ color: "#0EA5E9" }}>360</span>
       </p>
     </div>
   )

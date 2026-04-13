@@ -283,7 +283,7 @@ export default function DealPortalPage() {
         <div className="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <span className="font-bold text-lg text-ocean">MarineXchange</span>
+            <span className="font-bold text-lg text-ocean">Harbours360</span>
             <span className="text-text-secondary text-sm hidden sm:block">/ Deal Portal</span>
           </div>
           <Badge
@@ -323,7 +323,7 @@ export default function DealPortalPage() {
         {isExpired && (
           <div className="flex items-center gap-2 p-3 rounded-lg bg-danger/10 border border-danger/20 text-danger text-sm">
             <AlertCircle className="w-4 h-4 shrink-0" />
-            This acceptance link has expired. Please contact your MarineXchange agent.
+            This acceptance link has expired. Please contact your Harbours360 agent.
           </div>
         )}
 
@@ -409,7 +409,7 @@ export default function DealPortalPage() {
         </div>
 
         <p className="text-center text-xs text-text-secondary pb-4">
-          MarineXchange Africa &middot; Secure Deal Portal &middot; All transactions are monitored and recorded.
+          Harbours360 &middot; Secure Deal Portal &middot; All transactions are monitored and recorded.
         </p>
       </main>
     </div>

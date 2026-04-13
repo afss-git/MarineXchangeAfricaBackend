@@ -683,7 +683,7 @@ function SubmissionPanel({ sub, onReviewed }: {
   const [riskScore, setRiskScore]         = useState<"low" | "medium" | "high">("low")
   const [isPep, setIsPep]                 = useState(false)
   const [sanctionsMatch, setSanctionsMatch] = useState(false)
-  const [recommendation, setRecommendation] = useState<KycAgentReviewRequest["recommendation"]>("recommend_approve")
+  const [recommendation, setRecommendation] = useState<KycAgentReviewRequest["recommendation"]>("reject")
   const [notes, setNotes]                 = useState("")
   const [submitting, setSubmitting]       = useState(false)
   const [reviewError, setReviewError]     = useState<string | null>(null)
@@ -725,10 +725,10 @@ function SubmissionPanel({ sub, onReviewed }: {
     try {
       await kycAgent.submitReview(sub.id, {
         assessment: assessment.trim(),
-        risk_score: riskScore,
+        risk_score: effectiveRisk,
         is_pep: isPep,
         sanctions_match: sanctionsMatch,
-        recommendation,
+        recommendation: effectiveRecommendation,
         ...(notes.trim() ? { notes: notes.trim() } : {}),
       })
       setSubmitted(true)
@@ -740,8 +740,9 @@ function SubmissionPanel({ sub, onReviewed }: {
     }
   }
 
-  const effectiveRisk = (isPep || sanctionsMatch) ? "high" : riskScore
-  const forceReject   = isPep || sanctionsMatch
+  const effectiveRisk           = (isPep || sanctionsMatch) ? "high" : riskScore
+  const forceReject             = isPep || sanctionsMatch
+  const effectiveRecommendation = (forceReject && recommendation === "approve") ? "reject" : recommendation
 
   if (loading) return (
     <div className="flex items-center justify-center py-10 gap-2 text-text-secondary text-sm border-t border-border">
@@ -979,29 +980,32 @@ function SubmissionPanel({ sub, onReviewed }: {
                   <span className="font-normal ml-1">(admin makes the final decision)</span>
                 </label>
                 <div className="flex gap-2 flex-wrap">
-                  {(forceReject
-                    ? ["recommend_reject", "requires_resubmission"] as const
-                    : ["recommend_approve", "recommend_reject", "requires_resubmission"] as const
-                  ).map((rec) => (
-                    <button
-                      key={rec}
-                      onClick={() => setRecommendation(rec)}
-                      className={cn(
-                        "px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors capitalize",
-                        recommendation === rec
-                          ? rec === "recommend_approve"
-                            ? "bg-success text-white border-success"
-                            : rec === "recommend_reject"
-                            ? "bg-danger text-white border-danger"
-                            : "bg-warning text-white border-warning"
-                          : "bg-white text-text-secondary border-border hover:border-gray-300"
-                      )}
-                    >
-                      {rec === "recommend_approve" ? "Recommend Approve"
-                        : rec === "recommend_reject" ? "Recommend Reject"
-                        : "Requires Resubmission"}
-                    </button>
-                  ))}
+                  {(["approve", "reject", "requires_resubmission"] as const).map((rec) => {
+                    const disabled = forceReject && rec === "approve"
+                    return (
+                      <button
+                        key={rec}
+                        disabled={disabled}
+                        onClick={() => !disabled && setRecommendation(rec)}
+                        className={cn(
+                          "px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors capitalize",
+                          disabled
+                            ? "opacity-40 cursor-not-allowed bg-white text-text-secondary border-border"
+                            : recommendation === rec
+                            ? rec === "approve"
+                              ? "bg-success text-white border-success"
+                              : rec === "reject"
+                              ? "bg-danger text-white border-danger"
+                              : "bg-warning text-white border-warning"
+                            : "bg-white text-text-secondary border-border hover:border-gray-300"
+                        )}
+                      >
+                        {rec === "approve" ? "Recommend Approve"
+                          : rec === "reject" ? "Recommend Reject"
+                          : "Requires Resubmission"}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
 

@@ -31,10 +31,9 @@ export function AuthLeftPanel({ heading, description, benefits }: AuthLeftPanelP
           </div>
           <div className="flex flex-col">
             <span className="text-xl font-bold tracking-tight">
-              <span className="text-white">Marine</span>
-              <span className="text-ocean">Xchange</span>
+              <span className="text-white">Harbours</span>
+              <span className="text-ocean">360</span>
             </span>
-            <span className="text-white/70 text-xs tracking-wide">Africa</span>
           </div>
         </div>
 

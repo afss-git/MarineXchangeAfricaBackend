@@ -1,5 +1,5 @@
 /**
- * Central SWR hooks for MarineXchange Africa.
+ * Central SWR hooks for Harbours360.
  *
  * Pattern:
  *  - isLoading  = true only on the FIRST fetch (no cached data yet)

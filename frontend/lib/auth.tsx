@@ -1,5 +1,17 @@
 "use client"
 
+/**
+ * SECURITY: Auth tokens are stored exclusively in HttpOnly cookies set by the
+ * backend. JavaScript (including this file) cannot read or write them.
+ * This eliminates the entire class of XSS-based token theft that affected the
+ * previous localStorage approach.
+ *
+ * Session hydration: on mount we call /auth/me — if the access_token cookie is
+ * present and valid the backend returns the user profile. If it's expired, the
+ * fetch wrapper automatically calls /auth/refresh (which sends the refresh_token
+ * cookie). No token values are ever stored in JavaScript variables or storage.
+ */
+
 import {
   createContext,
   useCallback,
@@ -22,31 +34,12 @@ interface AuthState {
 interface AuthContextValue extends AuthState {
   login: (email: string, password: string) => Promise<AuthTokenResponse>
   logout: () => Promise<void>
-  setSession: (tokens: AuthTokenResponse) => void
+  setSession: (data: AuthTokenResponse) => void
 }
 
 // ── Context ──────────────────────────────────────────────────────────────────
 
 const AuthContext = createContext<AuthContextValue | null>(null)
-
-// ── Token helpers ────────────────────────────────────────────────────────────
-
-function saveTokens(data: AuthTokenResponse) {
-  localStorage.setItem("access_token", data.access_token)
-  localStorage.setItem("refresh_token", data.refresh_token)
-  localStorage.setItem("token_expires_at", String(Date.now() + data.expires_in * 1000))
-}
-
-function clearTokens() {
-  localStorage.removeItem("access_token")
-  localStorage.removeItem("refresh_token")
-  localStorage.removeItem("token_expires_at")
-}
-
-function hasStoredToken(): boolean {
-  if (typeof window === "undefined") return false
-  return !!localStorage.getItem("access_token")
-}
 
 // ── Provider ─────────────────────────────────────────────────────────────────
 
@@ -58,13 +51,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isAuthenticated: false,
   })
 
-  // Hydrate user from stored token on mount
+  // Hydrate user from HttpOnly cookie on mount.
+  // No localStorage check needed — the cookie is sent automatically by the browser.
   useEffect(() => {
-    if (!hasStoredToken()) {
-      setState({ user: null, isLoading: false, isAuthenticated: false })
-      return
-    }
-
     authApi
       .getMe()
       .then((user) => {
@@ -73,12 +62,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .catch((err) => {
         const status = err?.status ?? 0
         if (status === 401 || status === 403) {
-          // Genuine auth failure — clear tokens and sign out
-          clearTokens()
+          // Cookie missing or genuinely expired after refresh attempt
           setState({ user: null, isLoading: false, isAuthenticated: false })
         } else {
-          // Network error (backend down/sleeping) — keep the stored token,
-          // treat the user as authenticated so they aren't kicked to login
+          // Network error (backend down/sleeping) — don't kick user to login
           setState({ user: null, isLoading: false, isAuthenticated: true })
         }
       })
@@ -86,7 +73,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const data = await authApi.login({ email, password })
-    saveTokens(data)
+    // Backend sets HttpOnly cookies automatically in the login response.
+    // We only need the user profile from the response body.
     setState({ user: data.user, isLoading: false, isAuthenticated: true })
     return data
   }, [])
@@ -94,17 +82,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     try {
       await authApi.logout()
+      // Backend clears the HttpOnly cookies in the logout response.
     } catch {
       // Ignore — token might already be expired
     }
-    clearTokens()
     setState({ user: null, isLoading: false, isAuthenticated: false })
     router.push("/login")
   }, [router])
 
-  const setSession = useCallback((tokens: AuthTokenResponse) => {
-    saveTokens(tokens)
-    setState({ user: tokens.user, isLoading: false, isAuthenticated: true })
+  const setSession = useCallback((data: AuthTokenResponse) => {
+    // Used after invite-link password set — cookies already set by backend
+    setState({ user: data.user, isLoading: false, isAuthenticated: true })
   }, [])
 
   const value = useMemo<AuthContextValue>(

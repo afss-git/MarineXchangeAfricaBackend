@@ -42,12 +42,9 @@ export function Footer() {
               </div>
               <div className="flex flex-col">
                 <div className="flex items-baseline tracking-tight">
-                  <span className="text-white font-extrabold text-lg">Marine</span>
-                  <span className="text-ocean font-extrabold text-lg">Xchange</span>
+                  <span className="text-white font-extrabold text-lg">Harbours</span>
+                  <span className="text-ocean font-extrabold text-lg">360</span>
                 </div>
-                <span className="text-[9px] text-white/50 font-medium tracking-[0.2em] uppercase -mt-1">
-                  AFRICA
-                </span>
               </div>
             </Link>
             <p className="text-white/40 text-sm leading-relaxed max-w-[240px]">
@@ -133,7 +130,7 @@ export function Footer() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <p className="text-white/30 text-sm">
-              © 2025 MarineXchange Africa. All rights reserved.
+              © 2025 Harbours360. All rights reserved.
             </p>
             <div className="flex items-center gap-6">
               {socialLinks.map((link, index) => (

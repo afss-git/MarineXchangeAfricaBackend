@@ -326,7 +326,7 @@ function CreateStaffModal({ onClose, onCreated }: CreateStaffModalProps) {
             <Input
               id="cs-email"
               type="email"
-              placeholder="agent@marinexchange.com"
+              placeholder="agent@harbours360.com"
               value={form.email}
               onChange={(e) => set("email", e.target.value)}
               className={cn("bg-white", errors.email && "border-danger focus-visible:ring-danger/20")}

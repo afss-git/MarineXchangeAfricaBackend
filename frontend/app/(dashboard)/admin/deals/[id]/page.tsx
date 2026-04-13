@@ -2,14 +2,13 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
-import Link from "next/link"
 import {
   ArrowLeft, RefreshCw, AlertCircle, CheckCircle2, XCircle,
   Clock, AlertTriangle, DollarSign, Calendar, Plus, Trash2,
-  Handshake, User, Package, ChevronDown, ChevronUp, Shield,
+  User, Package, ChevronDown, ChevronUp, Shield,
   FileText, Banknote, X, Upload, Download, FolderOpen, Receipt,
-  Eye, EyeOff, Loader2, Send, Ban, Zap, CreditCard, Bell,
-  Settings2, ShieldAlert, Edit3,
+  Loader2, Send, Ban, Zap, CreditCard, Bell,
+  Settings2, ShieldAlert, Edit3, Eye, EyeOff,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -71,16 +70,17 @@ const DEAL_STATUS_COLOR: Record<string, string> = {
 }
 
 const ITEM_STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-  pending: { label: "Pending", color: "bg-warning/10 text-warning border-warning/20", icon: Clock },
-  verified: { label: "Verified", color: "bg-success/10 text-success border-success/20", icon: CheckCircle2 },
-  overdue: { label: "Overdue", color: "bg-danger/10 text-danger border-danger/20", icon: AlertTriangle },
-  waived: { label: "Waived", color: "bg-gray-100 text-text-secondary border-gray-200", icon: Shield },
+  pending:           { label: "Pending",            color: "bg-warning/10 text-warning border-warning/20",   icon: Clock },
+  payment_submitted: { label: "Payment Submitted",  color: "bg-ocean/10 text-ocean border-ocean/20",         icon: Receipt },
+  verified:          { label: "Verified",           color: "bg-success/10 text-success border-success/20",   icon: CheckCircle2 },
+  overdue:           { label: "Overdue",            color: "bg-danger/10 text-danger border-danger/20",      icon: AlertTriangle },
+  waived:            { label: "Waived",             color: "bg-gray-100 text-text-secondary border-gray-200", icon: Shield },
 }
 
 const RECORD_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  pending_review: { label: "Pending Review", color: "bg-warning/10 text-warning border-warning/20" },
-  verified: { label: "Verified", color: "bg-success/10 text-success border-success/20" },
-  rejected: { label: "Rejected", color: "bg-danger/10 text-danger border-danger/20" },
+  pending_verification: { label: "Awaiting Review", color: "bg-warning/10 text-warning border-warning/20" },
+  verified:             { label: "Verified",        color: "bg-success/10 text-success border-success/20" },
+  rejected:             { label: "Rejected",        color: "bg-danger/10 text-danger border-danger/20" },
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -90,124 +90,6 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
     <div className="flex items-start justify-between py-2.5 border-b border-border last:border-0">
       <span className="text-xs text-text-secondary">{label}</span>
       <span className="text-xs font-medium text-text-primary text-right max-w-[200px]">{value}</span>
-    </div>
-  )
-}
-
-// ── Verify / Reject panel ─────────────────────────────────────────────────────
-
-function ReviewPanel({
-  record,
-  onDone,
-  onClose,
-}: {
-  record: PaymentRecordOut
-  onDone: (updated: PaymentRecordOut) => void
-  onClose: () => void
-}) {
-  const [mode, setMode] = useState<"verify" | "reject">("verify")
-  const [notes, setNotes] = useState("")
-  const [rejectReason, setRejectReason] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function submit() {
-    setIsLoading(true)
-    setError(null)
-    try {
-      let updated: PaymentRecordOut
-      if (mode === "verify") {
-        updated = await payments.admin.verifyPayment(record.id, notes || undefined)
-      } else {
-        if (!rejectReason.trim()) {
-          setError("Rejection reason is required.")
-          setIsLoading(false)
-          return
-        }
-        updated = await payments.admin.rejectPayment(record.id, rejectReason)
-      }
-      onDone(updated)
-    } catch (e: unknown) {
-      setError((e as Error)?.message ?? "Action failed.")
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  return (
-    <div className="mt-3 rounded-xl border border-border bg-gray-50 p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-semibold text-text-primary">Review Payment</p>
-        <button onClick={onClose} className="text-text-secondary hover:text-text-primary">
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* Mode toggle */}
-      <div className="flex gap-2">
-        {(["verify", "reject"] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => setMode(m)}
-            className={cn(
-              "flex-1 py-2 rounded-lg text-sm font-medium border transition-colors",
-              mode === m
-                ? m === "verify"
-                  ? "bg-success text-white border-success"
-                  : "bg-danger text-white border-danger"
-                : "bg-white text-text-secondary border-border hover:border-gray-300"
-            )}
-          >
-            {m === "verify" ? "✓ Verify" : "✗ Reject"}
-          </button>
-        ))}
-      </div>
-
-      {mode === "verify" ? (
-        <div>
-          <label className="text-xs font-medium text-text-secondary block mb-1">Notes (optional)</label>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={2}
-            placeholder="Internal notes about this verification…"
-            className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-success/20 focus:border-success resize-none"
-          />
-        </div>
-      ) : (
-        <div>
-          <label className="text-xs font-medium text-text-secondary block mb-1">
-            Rejection Reason <span className="text-danger">*</span>
-          </label>
-          <textarea
-            value={rejectReason}
-            onChange={(e) => setRejectReason(e.target.value)}
-            rows={2}
-            placeholder="Explain why this payment is being rejected…"
-            className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-danger/20 focus:border-danger resize-none"
-          />
-        </div>
-      )}
-
-      {error && <p className="text-xs text-danger">{error}</p>}
-
-      <Button
-        onClick={submit}
-        disabled={isLoading}
-        size="sm"
-        className={cn(
-          "w-full",
-          mode === "verify"
-            ? "bg-success hover:bg-success/90 text-white"
-            : "bg-danger hover:bg-danger/90 text-white"
-        )}
-      >
-        {isLoading
-          ? "Processing…"
-          : mode === "verify"
-          ? "Confirm Verification"
-          : "Confirm Rejection"}
-      </Button>
     </div>
   )
 }
@@ -274,6 +156,34 @@ function WaivePanel({
   )
 }
 
+// ── Evidence file button (fetches signed URL on click) ────────────────────────
+
+function EvidenceFileButton({ evidenceId, fileName }: { evidenceId: string; fileName: string }) {
+  const [loading, setLoading] = useState(false)
+
+  async function open() {
+    setLoading(true)
+    try {
+      const { signed_url } = await payments.admin.getEvidenceDownloadUrl(evidenceId)
+      window.open(signed_url, "_blank", "noopener,noreferrer")
+    } catch { /* ignore */ }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <button
+      onClick={open}
+      disabled={loading}
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-ocean/5 border border-ocean/20 rounded-lg text-xs text-ocean hover:bg-ocean/10 hover:border-ocean/40 transition-colors disabled:opacity-50"
+    >
+      {loading
+        ? <Loader2 className="w-3 h-3 animate-spin" />
+        : <Download className="w-3 h-3" />}
+      {fileName}
+    </button>
+  )
+}
+
 // ── Payment record row ────────────────────────────────────────────────────────
 
 function RecordRow({
@@ -283,48 +193,82 @@ function RecordRow({
   record: PaymentRecordOut
   onUpdate: (updated: PaymentRecordOut) => void
 }) {
-  const [open, setOpen] = useState(false)
-  const [showReview, setShowReview] = useState(false)
+  const [open, setOpen] = useState(record.status === "pending_verification")
+  const [reviewMode, setReviewMode] = useState<"verify" | "reject" | null>(null)
+  const [rejectReason, setRejectReason] = useState("")
+  const [notes, setNotes] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const cfg = RECORD_STATUS_CONFIG[record.status] ?? {
     label: record.status,
     color: "bg-gray-100 text-text-secondary border-gray-200",
   }
+  const isPending = record.status === "pending_verification"
+
+  async function submitReview() {
+    if (!reviewMode) return
+    if (reviewMode === "reject" && !rejectReason.trim()) {
+      setError("Rejection reason is required.")
+      return
+    }
+    setIsLoading(true)
+    setError(null)
+    try {
+      let updated: PaymentRecordOut
+      if (reviewMode === "verify") {
+        updated = await payments.admin.verifyPayment(record.id, notes || undefined)
+      } else {
+        updated = await payments.admin.rejectPayment(record.id, rejectReason)
+      }
+      onUpdate(updated)
+      setReviewMode(null)
+    } catch (e: unknown) {
+      setError((e as Error)?.message ?? "Action failed.")
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   return (
-    <div className="rounded-lg border border-border bg-white overflow-hidden">
+    <div className={cn(
+      "rounded-xl border bg-white overflow-hidden",
+      isPending ? "border-warning/40 ring-1 ring-warning/20" : "border-border"
+    )}>
+      {/* Header row */}
       <button
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
       >
-        <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border", cfg.color)}>
+        <span className={cn("inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border", cfg.color)}>
           {cfg.label}
         </span>
         <span className="font-semibold text-sm text-text-primary">
           {fmtCurrency(record.amount_paid, record.currency)}
         </span>
         <span className="text-xs text-text-secondary">{fmtDate(record.payment_date)}</span>
-        <span className="text-xs text-text-secondary ml-auto capitalize">
+        <span className="text-xs text-text-secondary capitalize ml-auto">
           {record.payment_method.replace(/_/g, " ")}
         </span>
-        {open ? (
-          <ChevronUp className="w-4 h-4 text-text-secondary" />
-        ) : (
-          <ChevronDown className="w-4 h-4 text-text-secondary" />
+        {isPending && (
+          <span className="text-xs font-semibold text-warning bg-warning/10 px-2 py-0.5 rounded-full border border-warning/20 shrink-0">
+            Needs Review
+          </span>
         )}
+        {open ? <ChevronUp className="w-4 h-4 text-text-secondary shrink-0" /> : <ChevronDown className="w-4 h-4 text-text-secondary shrink-0" />}
       </button>
 
       {open && (
-        <div className="px-4 pb-4 border-t border-border space-y-3">
-          <div className="grid grid-cols-2 gap-x-4 mt-3">
+        <div className="border-t border-border">
+          {/* Payment details */}
+          <div className="px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-0">
             {[
               ["Submitted", fmtDateTime(record.submitted_at)],
               ["Bank Name", record.bank_name ?? "—"],
               ["Bank Reference", record.bank_reference ?? "—"],
-              ["Reviewed By", record.reviewed_by ?? "—"],
               ["Reviewed At", fmtDateTime(record.reviewed_at)],
             ].map(([label, value]) => (
-              <div key={label} className="py-1.5 border-b border-border/50">
+              <div key={label} className="py-1.5 border-b border-border/40 last:border-0">
                 <p className="text-xs text-text-secondary">{label}</p>
                 <p className="text-xs font-medium text-text-primary">{value}</p>
               </div>
@@ -332,58 +276,110 @@ function RecordRow({
           </div>
 
           {record.notes && (
-            <div className="bg-gray-50 rounded-lg p-3">
-              <p className="text-xs text-text-secondary mb-1">Notes</p>
+            <div className="mx-4 mb-3 px-3 py-2 bg-gray-50 rounded-lg">
+              <p className="text-xs text-text-secondary mb-0.5">Buyer Notes</p>
               <p className="text-xs text-text-primary">{record.notes}</p>
             </div>
           )}
 
           {record.rejection_reason && (
-            <div className="bg-danger/5 border border-danger/20 rounded-lg p-3">
-              <p className="text-xs font-medium text-danger mb-0.5">Rejection Reason</p>
+            <div className="mx-4 mb-3 px-3 py-2 bg-danger/5 border border-danger/20 rounded-lg">
+              <p className="text-xs font-semibold text-danger mb-0.5">Rejection Reason</p>
               <p className="text-xs text-text-primary">{record.rejection_reason}</p>
             </div>
           )}
 
-          {/* Evidence files */}
-          {record.evidence && record.evidence.length > 0 && (
-            <div>
-              <p className="text-xs font-semibold text-text-secondary mb-2">Evidence Files</p>
+          {/* Receipt / Evidence */}
+          <div className="px-4 pb-3">
+            <p className="text-xs font-semibold text-text-secondary mb-2">
+              Payment Receipt {record.evidence.length > 0 ? `(${record.evidence.length})` : ""}
+            </p>
+            {record.evidence.length > 0 ? (
               <div className="flex flex-wrap gap-2">
                 {record.evidence.map((ev) => (
-                  <span
-                    key={ev.id}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-100 rounded-lg text-xs text-text-primary"
-                  >
-                    <FileText className="w-3 h-3 text-ocean" />
-                    {ev.file_name}
-                  </span>
+                  <EvidenceFileButton key={ev.id} evidenceId={ev.id} fileName={ev.file_name} />
                 ))}
               </div>
-            </div>
-          )}
+            ) : (
+              <p className="text-xs text-text-secondary/60 italic">No receipt uploaded by buyer.</p>
+            )}
+          </div>
 
-          {/* Actions */}
-          {record.status === "pending_review" && (
-            <>
-              {!showReview && (
-                <Button
-                  size="sm"
-                  onClick={() => setShowReview(true)}
-                  className="gap-1.5 bg-ocean hover:bg-ocean-dark text-white"
-                >
-                  <Shield className="w-3.5 h-3.5" />
-                  Review Payment
-                </Button>
+          {/* Approve / Reject actions — only for pending records */}
+          {isPending && (
+            <div className="px-4 pb-4 space-y-3 border-t border-border pt-3">
+              {!reviewMode ? (
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => setReviewMode("verify")}
+                    className="flex-1 bg-success hover:bg-success/90 text-white gap-1.5"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Approve Payment
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setReviewMode("reject")}
+                    className="flex-1 border-danger/40 text-danger hover:bg-danger/5 gap-1.5"
+                  >
+                    <XCircle className="w-3.5 h-3.5" /> Reject
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      "text-sm font-semibold",
+                      reviewMode === "verify" ? "text-success" : "text-danger"
+                    )}>
+                      {reviewMode === "verify" ? "Approving payment" : "Rejecting payment"}
+                    </span>
+                    <button onClick={() => { setReviewMode(null); setError(null) }} className="ml-auto text-text-secondary hover:text-text-primary">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {reviewMode === "verify" ? (
+                    <textarea
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      rows={2}
+                      placeholder="Optional notes for your records…"
+                      className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-success/20 focus:border-success resize-none"
+                    />
+                  ) : (
+                    <textarea
+                      value={rejectReason}
+                      onChange={(e) => setRejectReason(e.target.value)}
+                      rows={2}
+                      placeholder="Explain why this payment is rejected (buyer will see this)…"
+                      className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-danger/20 focus:border-danger resize-none"
+                    />
+                  )}
+
+                  {error && <p className="text-xs text-danger">{error}</p>}
+
+                  <Button
+                    onClick={submitReview}
+                    disabled={isLoading}
+                    size="sm"
+                    className={cn(
+                      "w-full gap-1.5",
+                      reviewMode === "verify"
+                        ? "bg-success hover:bg-success/90 text-white"
+                        : "bg-danger hover:bg-danger/90 text-white"
+                    )}
+                  >
+                    {isLoading
+                      ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Processing…</>
+                      : reviewMode === "verify"
+                      ? <><CheckCircle2 className="w-3.5 h-3.5" /> Confirm Approval</>
+                      : <><XCircle className="w-3.5 h-3.5" /> Confirm Rejection</>}
+                  </Button>
+                </div>
               )}
-              {showReview && (
-                <ReviewPanel
-                  record={record}
-                  onDone={(updated) => { onUpdate(updated); setShowReview(false) }}
-                  onClose={() => setShowReview(false)}
-                />
-              )}
-            </>
+            </div>
           )}
         </div>
       )}
