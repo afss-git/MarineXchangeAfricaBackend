@@ -13,10 +13,10 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile, status
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-from app.core.cookies import set_auth_cookies
 from app.db.client import get_pool
 from app.deps import CurrentUser, DbConn
 from app.schemas.auth import (
@@ -35,23 +35,20 @@ from app.services import profile_service
 router = APIRouter(tags=["Auth — Profile"])
 
 
-@router.post("/refresh", summary="Refresh access token")
-async def refresh_token(request: Request, response: Response):
-    """
-    Exchange a valid refresh_token cookie for a new access_token + refresh_token pair.
-    Both tokens are rotated and returned as HttpOnly cookies.
-    """
-    token = request.cookies.get("refresh_token")
-    logger.debug("Refresh: cookie %s", "present" if token else "absent")
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Refresh token is required. Please log in again.",
-        )
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
 
+
+@router.post("/refresh", summary="Refresh access token")
+async def refresh_token(body: RefreshTokenRequest):
+    """
+    Exchange a valid refresh_token for a new access_token + refresh_token pair.
+    Accepts JSON body: {"refresh_token": "<token>"}
+    Returns new tokens in the response body.
+    """
     supabase = await get_supabase_client()
     try:
-        resp = await supabase.auth.refresh_session(token)
+        resp = await supabase.auth.refresh_session(body.refresh_token)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -65,25 +62,12 @@ async def refresh_token(request: Request, response: Response):
             detail="Refresh token is invalid or expired. Please log in again.",
         )
 
-    user_id = session.user.id
-    pool = await get_pool()
-    async with pool.acquire() as db:
-        profile = await db.fetchrow(
-            """
-            SELECT p.*, u.email
-            FROM public.profiles p
-            JOIN auth.users u ON u.id = p.id
-            WHERE p.id = $1
-            """,
-            UUID(str(user_id)),
-        )
-
-    if not profile:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found.")
-
-    expires_in = session.expires_in or 3600
-    set_auth_cookies(response, session.access_token, session.refresh_token, expires_in)
-    return {"ok": True}
+    return {
+        "access_token": session.access_token,
+        "refresh_token": session.refresh_token,
+        "token_type": "bearer",
+        "expires_in": session.expires_in or 3600,
+    }
 
 
 @router.get(
