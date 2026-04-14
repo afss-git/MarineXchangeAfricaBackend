@@ -40,7 +40,6 @@ router = APIRouter(tags=["Auth — Profile"])
 
 @router.post(
     "/refresh",
-    response_model=AuthTokenResponse,
     summary="Refresh access token",
     description=(
         "Exchange a valid refresh_token for a new access_token + refresh_token pair.\n\n"
