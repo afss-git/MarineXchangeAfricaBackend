@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Cookie, File, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile, status
 from typing import Annotated
 
 logger = logging.getLogger(__name__)
@@ -48,13 +48,15 @@ router = APIRouter(tags=["Auth — Profile"])
     ),
 )
 async def refresh_token(
+    request: Request,
     response: Response,
     db: DbConn,
-    refresh_token_cookie: Annotated[str | None, Cookie(alias="refresh_token")] = None,
 ) -> AuthTokenResponse:
     from uuid import UUID
 
-    token = refresh_token_cookie
+    # Read cookie directly from request — avoids FastAPI Cookie() param 422 edge cases
+    token = request.cookies.get("refresh_token")
+    logger.debug("Refresh: cookie %s", "present" if token else "absent")
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
