@@ -1125,7 +1125,13 @@ function AdminInvoicesPanel({
     setDownloading(inv.id)
     try {
       const res = await documentsApi.downloadInvoice(inv.id)
-      window.open(res.signed_url, "_blank", "noopener")
+      const a = document.createElement("a")
+      a.href = res.signed_url
+      a.download = `${res.invoice_ref}.pdf`
+      a.rel = "noopener"
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
     } catch (e: unknown) {
       alert((e as Error)?.message ?? "Download failed.")
     } finally {
