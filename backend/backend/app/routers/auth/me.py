@@ -53,7 +53,7 @@ async def refresh_token(
     request: Request,
     response: Response,
     db: asyncpg.Connection = Depends(get_db),
-) -> AuthTokenResponse:
+):
     from uuid import UUID
 
     # Read cookie directly from request — avoids FastAPI Cookie() param 422 edge cases
