@@ -13,12 +13,14 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile, status
+import asyncpg
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
 from typing import Annotated
 
 logger = logging.getLogger(__name__)
 
 from app.core.cookies import set_auth_cookies
+from app.db.client import get_db
 from app.deps import CurrentUser, DbConn
 from app.schemas.auth import (
     AuthTokenResponse,
@@ -50,7 +52,7 @@ router = APIRouter(tags=["Auth — Profile"])
 async def refresh_token(
     request: Request,
     response: Response,
-    db: DbConn,
+    db: asyncpg.Connection = Depends(get_db),
 ) -> AuthTokenResponse:
     from uuid import UUID
 
