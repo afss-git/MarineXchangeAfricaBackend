@@ -9,9 +9,8 @@ POST   /auth/me/set-password — set password via invite link (no current passwo
 POST   /auth/me/avatar       — upload profile photo
 POST   /auth/refresh         — exchange refresh_token for new access_token
 """
-from __future__ import annotations
-
 import logging
+from uuid import UUID
 
 import asyncpg
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
@@ -54,8 +53,6 @@ async def refresh_token(
     response: Response,
     db: asyncpg.Connection = Depends(get_db),
 ):
-    from uuid import UUID
-
     # Read cookie directly from request — avoids FastAPI Cookie() param 422 edge cases
     token = request.cookies.get("refresh_token")
     logger.debug("Refresh: cookie %s", "present" if token else "absent")
@@ -161,7 +158,6 @@ async def set_password(
     body: SetPasswordBody,
     current_user: CurrentUser,
 ) -> dict:
-    from uuid import UUID
     admin_client = await get_supabase_admin_client()
     try:
         await admin_client.auth.admin.update_user_by_id(
@@ -187,6 +183,7 @@ async def change_password(
     current_user: CurrentUser,
 ) -> dict:
     return await profile_service.change_password(db, current_user, body)
+
 
 
 @router.post(
