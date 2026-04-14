@@ -355,12 +355,10 @@ async function tryRefreshToken(): Promise<RefreshResult> {
     try {
       const res = await fetch(`${API_BASE}/auth/refresh`, {
         method: "POST",
-        credentials: "include",                         // sends refresh_token cookie
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),                       // body required by FastAPI, token comes from cookie
+        credentials: "include",   // sends refresh_token HttpOnly cookie automatically
       })
-      // 401/403 = refresh token genuinely expired or missing
-      if (!res.ok) return res.status === 401 || res.status === 403 ? false : "server_down"
+      // Any non-5xx = session expired or missing — treat as logged out, redirect to login
+      if (!res.ok) return res.status < 500 ? false : "server_down"
       // Backend sets new access_token + refresh_token cookies automatically
       return true
     } catch {
