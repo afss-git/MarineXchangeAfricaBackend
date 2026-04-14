@@ -21,7 +21,7 @@ import {
   useState,
 } from "react"
 import { useRouter } from "next/navigation"
-import { auth as authApi, type AuthTokenResponse, type UserProfile } from "./api"
+import { auth as authApi, storeTokens, clearTokens, type AuthTokenResponse, type UserProfile } from "./api"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -73,8 +73,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const data = await authApi.login({ email, password })
-    // Backend sets HttpOnly cookies automatically in the login response.
-    // We only need the user profile from the response body.
+    storeTokens(data.access_token, data.refresh_token)
     setState({ user: data.user, isLoading: false, isAuthenticated: true })
     return data
   }, [])
@@ -82,10 +81,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     try {
       await authApi.logout()
-      // Backend clears the HttpOnly cookies in the logout response.
     } catch {
       // Ignore — token might already be expired
     }
+    clearTokens()
     setState({ user: null, isLoading: false, isAuthenticated: false })
     router.push("/login")
   }, [router])

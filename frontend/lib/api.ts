@@ -339,12 +339,34 @@ export class ApiRequestError extends Error {
   }
 }
 
+// ── Token storage (localStorage) ──────────────────────────────────────────────
+
+const TOKEN_KEY = "mx_access_token"
+const REFRESH_KEY = "mx_refresh_token"
+
+export function storeTokens(accessToken: string, refreshToken: string): void {
+  if (typeof window === "undefined") return
+  localStorage.setItem(TOKEN_KEY, accessToken)
+  localStorage.setItem(REFRESH_KEY, refreshToken)
+}
+
+export function clearTokens(): void {
+  if (typeof window === "undefined") return
+  localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(REFRESH_KEY)
+}
+
+function getAccessToken(): string | null {
+  if (typeof window === "undefined") return null
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+function getRefreshToken(): string | null {
+  if (typeof window === "undefined") return null
+  return localStorage.getItem(REFRESH_KEY)
+}
+
 // ── Token refresh ─────────────────────────────────────────────────────────────
-//
-// SECURITY: Tokens are stored in HttpOnly cookies set by the backend.
-// The browser sends them automatically — no JavaScript can read them.
-// The refresh call uses credentials: "include" so the refresh_token cookie
-// is sent automatically. No token is ever stored in localStorage.
 
 type RefreshResult = true | false | "server_down"
 let _refreshing: Promise<RefreshResult> | null = null
@@ -353,13 +375,21 @@ async function tryRefreshToken(): Promise<RefreshResult> {
   if (_refreshing) return _refreshing
   _refreshing = (async (): Promise<RefreshResult> => {
     try {
+      const refreshToken = getRefreshToken()
+      if (!refreshToken) return false
+
       const res = await fetch(`${API_BASE}/auth/refresh`, {
         method: "POST",
-        credentials: "include",   // sends refresh_token HttpOnly cookie automatically
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
       })
-      // Any non-5xx = session expired or missing — treat as logged out, redirect to login
+
       if (!res.ok) return res.status < 500 ? false : "server_down"
-      // Backend sets new access_token + refresh_token cookies automatically
+
+      const data = await res.json().catch(() => null)
+      if (data?.access_token && data?.refresh_token) {
+        storeTokens(data.access_token, data.refresh_token)
+      }
       return true
     } catch {
       return "server_down"
@@ -372,9 +402,6 @@ async function tryRefreshToken(): Promise<RefreshResult> {
 
 
 // ── Fetch wrapper ─────────────────────────────────────────────────────────────
-//
-// All requests use credentials: "include" so HttpOnly auth cookies are sent.
-// No Authorization header is manually set — the browser handles it via cookies.
 
 async function request<T>(
   path: string,
@@ -388,10 +415,15 @@ async function request<T>(
     ...(options.headers as Record<string, string> | undefined),
   }
 
+  const token = getAccessToken()
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`
+  }
+
   const res = await fetch(url, {
     ...options,
     headers,
-    credentials: "include",   // HttpOnly cookies sent automatically — no localStorage needed
+    credentials: "include",
   })
 
   if (res.status === 204) return undefined as T
@@ -419,7 +451,10 @@ async function request<T>(
 // Binary/blob fetch (for streaming document endpoints)
 async function fetchBlob(path: string): Promise<{ blob: Blob; mimeType: string }> {
   const url = `${API_BASE}${path}`
-  const res = await fetch(url, { credentials: "include" })
+  const headers: Record<string, string> = {}
+  const token = getAccessToken()
+  if (token) headers["Authorization"] = `Bearer ${token}`
+  const res = await fetch(url, { headers, credentials: "include" })
   if (!res.ok) {
     const body = await res.json().catch(() => null)
     throw new ApiRequestError(res.status, body)
@@ -431,10 +466,15 @@ async function fetchBlob(path: string): Promise<{ blob: Blob; mimeType: string }
 // Multipart upload helper (no Content-Type header — browser sets boundary)
 async function upload<T>(path: string, formData: FormData, _isRetry = false): Promise<T> {
   const url = `${API_BASE}${path}`
+  const headers: Record<string, string> = {}
+  const token = getAccessToken()
+  if (token) headers["Authorization"] = `Bearer ${token}`
+
   const res = await fetch(url, {
     method: "POST",
     body: formData,
-    credentials: "include",   // HttpOnly cookie sent automatically
+    headers,
+    credentials: "include",
   })
 
   if (res.status === 401 && !_isRetry) {
