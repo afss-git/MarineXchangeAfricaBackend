@@ -1,6 +1,7 @@
 "use client"
 
-import { CheckCircle, Anchor } from "lucide-react"
+import Image from "next/image"
+import { CheckCircle } from "lucide-react"
 
 interface AuthLeftPanelProps {
   heading: string
@@ -26,8 +27,8 @@ export function AuthLeftPanel({ heading, description, benefits }: AuthLeftPanelP
       <div className="relative z-10 max-w-md">
         {/* Logo */}
         <div className="flex items-center gap-2 mb-12">
-          <div className="w-10 h-10 rounded-lg bg-ocean/20 flex items-center justify-center">
-            <Anchor className="w-6 h-6 text-ocean" />
+          <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center bg-white/15">
+            <Image src="/logo.jpeg" alt="Harbours360" width={40} height={40} className="w-full h-full object-contain" />
           </div>
           <div className="flex flex-col">
             <span className="text-xl font-bold tracking-tight">

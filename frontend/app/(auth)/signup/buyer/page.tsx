@@ -3,7 +3,8 @@
 import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Eye, EyeOff, Anchor, CheckCircle2 } from "lucide-react"
+import Image from "next/image"
+import { Eye, EyeOff, CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -165,8 +166,8 @@ export default function BuyerSignupPage() {
       <div className="w-full lg:w-1/2 flex flex-col justify-center items-center px-6 py-12 bg-white overflow-y-auto">
         {/* Mobile Logo */}
         <div className="lg:hidden flex items-center gap-2 mb-8">
-          <div className="w-10 h-10 rounded-lg bg-ocean/10 flex items-center justify-center">
-            <Anchor className="w-6 h-6 text-ocean" />
+          <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center bg-white">
+            <Image src="/logo.jpeg" alt="Harbours360" width={40} height={40} className="w-full h-full object-contain" />
           </div>
           <div className="flex flex-col">
             <span className="text-xl font-bold tracking-tight">

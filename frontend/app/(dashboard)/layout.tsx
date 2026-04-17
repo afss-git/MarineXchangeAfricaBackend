@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
@@ -13,7 +14,6 @@ import {
   LogOut,
   Menu,
   X,
-  Anchor,
   Lock,
   Gavel,
   Bell,
@@ -302,8 +302,8 @@ export default function DashboardLayout({
       >
         {/* Logo */}
         <div className="flex items-center gap-2 px-5 py-5 border-b border-white/10">
-          <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-ocean">
-            <Anchor className="w-5 h-5 text-white" />
+          <div className="w-9 h-9 rounded-lg overflow-hidden flex items-center justify-center bg-white/10">
+            <Image src="/logo.jpeg" alt="Harbours360" width={36} height={36} className="w-full h-full object-contain" />
           </div>
           <div className="flex items-baseline tracking-tight">
             <span className="text-lg font-extrabold text-white">Harbours</span>
