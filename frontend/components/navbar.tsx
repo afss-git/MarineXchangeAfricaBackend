@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { Anchor, Menu, X } from "lucide-react"
+import Image from "next/image"
+import { Menu, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 export function Navbar() {
@@ -32,10 +33,8 @@ export function Navbar() {
 
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 shrink-0">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center"
-              style={{ background: isScrolled ? "rgba(14,165,233,0.1)" : "rgba(14,165,233,0.15)" }}
-            >
-              <Anchor className={`w-4.5 h-4.5 transition-colors duration-300 ${isScrolled ? "text-ocean" : "text-ocean"}`} />
+            <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center bg-white/10">
+              <Image src="/logo.jpeg" alt="Harbours360" width={32} height={32} className="w-full h-full object-contain" />
             </div>
             <span className="font-extrabold text-lg tracking-tight leading-none">
               <span className={`transition-colors duration-300 ${isScrolled ? "text-navy" : "text-white"}`}>Harbours</span>

@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { Anchor } from "lucide-react"
+import Image from "next/image"
 
 const platformLinks = [
   { label: "Browse Listings", href: "/listings" },
@@ -38,11 +38,8 @@ export function Footer() {
           {/* Brand column */}
           <div className="col-span-2 lg:col-span-1">
             <Link href="/" className="flex items-center gap-2 mb-4">
-              <div
-                className="w-8 h-8 rounded-lg flex items-center justify-center"
-                style={{ background: "rgba(14,165,233,0.15)" }}
-              >
-                <Anchor className="w-4 h-4 text-ocean" />
+              <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center bg-white/10">
+                <Image src="/logo.jpeg" alt="Harbours360" width={32} height={32} className="w-full h-full object-contain" />
               </div>
               <span className="font-extrabold text-lg tracking-tight leading-none">
                 <span className="text-white">Harbours</span>
