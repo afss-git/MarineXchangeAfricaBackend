@@ -105,9 +105,9 @@ export function EnquirySection() {
   const errorClass = "text-danger text-xs mt-1"
 
   return (
-    <section id="enquiry" ref={ref} className="bg-white py-24 border-t border-border">
+    <section id="enquiry" ref={ref} className="bg-white py-16 sm:py-24 border-t border-border">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid lg:grid-cols-[1fr_540px] gap-16 items-start">
+        <div className="grid lg:grid-cols-[1fr_540px] gap-10 lg:gap-16 items-start">
 
           {/* Left — copy */}
           <div className={`${visible ? "animate-fade-up" : "opacity-0"}`}>
@@ -154,7 +154,7 @@ export function EnquirySection() {
           {/* Right — form */}
           <div className={`${visible ? "animate-fade-up delay-2" : "opacity-0"}`}>
             {submitted ? (
-              <div className="bg-surface border border-border rounded-2xl p-10 flex flex-col items-center text-center gap-4">
+              <div className="bg-surface border border-border rounded-2xl p-6 sm:p-10 flex flex-col items-center text-center gap-4">
                 <div className="w-14 h-14 rounded-full bg-success/10 flex items-center justify-center">
                   <CheckCircle className="w-7 h-7 text-success" />
                 </div>
@@ -172,7 +172,7 @@ export function EnquirySection() {
             ) : (
               <form
                 onSubmit={handleSubmit}
-                className="bg-surface border border-border rounded-2xl p-8 space-y-5"
+                className="bg-surface border border-border rounded-2xl p-5 sm:p-8 space-y-5"
                 noValidate
               >
                 {/* Name + Company */}

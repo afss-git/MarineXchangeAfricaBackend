@@ -67,11 +67,11 @@ export function FaqSection() {
   }, [])
 
   return (
-    <section id="faq" ref={ref} className="bg-surface py-24 border-t border-border">
+    <section id="faq" ref={ref} className="bg-surface py-16 sm:py-24 border-t border-border">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
 
         {/* Header */}
-        <div className={`text-center mb-14 ${visible ? "animate-fade-up" : "opacity-0"}`}>
+        <div className={`text-center mb-10 sm:mb-14 ${visible ? "animate-fade-up" : "opacity-0"}`}>
           <span className="text-ocean text-xs font-semibold tracking-[0.15em] uppercase mb-4 block">
             FAQ
           </span>
@@ -95,7 +95,7 @@ export function FaqSection() {
                 value={`faq-${index}`}
                 className="bg-white border border-border rounded-xl px-6 data-[state=open]:border-ocean/30 transition-colors"
               >
-                <AccordionTrigger className="text-navy font-semibold text-sm text-left py-5 hover:no-underline hover:text-ocean transition-colors [&[data-state=open]]:text-ocean">
+                <AccordionTrigger className="text-navy font-semibold text-sm text-left py-5 hover:no-underline hover:text-ocean transition-colors data-[state=open]:text-ocean">
                   {faq.q}
                 </AccordionTrigger>
                 <AccordionContent className="text-text-secondary text-sm leading-relaxed pb-5">

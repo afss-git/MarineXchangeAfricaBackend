@@ -47,10 +47,10 @@ export function HowItWorks() {
   }, [])
 
   return (
-    <section id="how-it-works" ref={ref} className="bg-white py-20">
+    <section id="how-it-works" ref={ref} className="bg-white py-16 sm:py-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
-        <div className={`text-center mb-16 ${isVisible ? "animate-fade-up" : "opacity-0"}`}>
+        <div className={`text-center mb-10 sm:mb-16 ${isVisible ? "animate-fade-up" : "opacity-0"}`}>
           <span className="text-ocean text-xs font-semibold tracking-[0.15em] uppercase mb-4 block">
             THE PROCESS
           </span>
@@ -70,7 +70,7 @@ export function HowItWorks() {
           {steps.map((step, index) => (
             <div
               key={index}
-              className={`bg-white rounded-2xl border border-border p-8 transition-all duration-300 hover:border-ocean hover:-translate-y-1 group ${
+              className={`bg-white rounded-2xl border border-border p-6 sm:p-8 transition-all duration-300 hover:border-ocean hover:-translate-y-1 group ${
                 isVisible ? `animate-fade-up delay-${index + 2}` : "opacity-0"
               }`}
               style={{

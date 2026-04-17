@@ -55,11 +55,11 @@ export function SocialProof() {
   }, [])
 
   return (
-    <section ref={ref} className="bg-white py-24 border-t border-border">
+    <section ref={ref} className="bg-white py-16 sm:py-24 border-t border-border">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
         {/* Header */}
-        <div className={`text-center mb-16 ${visible ? "animate-fade-up" : "opacity-0"}`}>
+        <div className={`text-center mb-10 sm:mb-16 ${visible ? "animate-fade-up" : "opacity-0"}`}>
           <span className="text-ocean text-xs font-semibold tracking-[0.15em] uppercase mb-4 block">
             TRUSTED ACROSS AFRICA
           </span>
@@ -90,7 +90,7 @@ export function SocialProof() {
           {testimonials.map((t, index) => (
             <div
               key={index}
-              className={`bg-surface rounded-2xl border border-border p-7 flex flex-col gap-5 hover:border-ocean/30 transition-colors duration-200 ${
+              className={`bg-surface rounded-2xl border border-border p-5 sm:p-7 flex flex-col gap-5 hover:border-ocean/30 transition-colors duration-200 ${
                 visible ? `animate-fade-up delay-${index + 2}` : "opacity-0"
               }`}
             >

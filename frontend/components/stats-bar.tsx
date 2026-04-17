@@ -48,7 +48,7 @@ function StatItem({
 
   return (
     <div
-      className={`py-10 px-6 text-center ${
+      className={`py-7 sm:py-10 px-4 sm:px-6 text-center ${
         !isLast ? "lg:border-r border-border" : ""
       } ${index === 0 || index === 2 ? "border-r border-border lg:border-r" : ""} ${
         index < 2 ? "border-b border-border lg:border-b-0" : ""

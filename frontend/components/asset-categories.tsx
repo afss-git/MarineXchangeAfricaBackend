@@ -70,10 +70,10 @@ export function AssetCategories() {
     : staticCategories.map((c) => ({ id: c.id, name: c.name }))
 
   return (
-    <section ref={ref} className="bg-surface py-20">
+    <section ref={ref} className="bg-surface py-16 sm:py-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
-        <div className={`flex flex-col sm:flex-row sm:items-end sm:justify-between mb-12 gap-6 ${isVisible ? "animate-fade-up" : "opacity-0"}`}>
+        <div className={`flex flex-col sm:flex-row sm:items-end sm:justify-between mb-8 sm:mb-12 gap-6 ${isVisible ? "animate-fade-up" : "opacity-0"}`}>
           <div>
             <span className="text-ocean text-xs font-semibold tracking-[0.15em] uppercase mb-4 block">
               MARKETPLACE

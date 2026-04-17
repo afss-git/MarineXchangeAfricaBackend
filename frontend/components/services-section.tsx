@@ -64,11 +64,11 @@ export function ServicesSection() {
   }, [])
 
   return (
-    <section id="services" ref={ref} className="bg-surface py-24">
+    <section id="services" ref={ref} className="bg-surface py-16 sm:py-24">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
         {/* Header */}
-        <div className={`mb-16 ${visible ? "animate-fade-up" : "opacity-0"}`}>
+        <div className={`mb-10 sm:mb-16 ${visible ? "animate-fade-up" : "opacity-0"}`}>
           <span className="text-ocean text-xs font-semibold tracking-[0.15em] uppercase mb-4 block">
             WHAT WE OFFER
           </span>
@@ -92,7 +92,7 @@ export function ServicesSection() {
             return (
               <div
                 key={index}
-                className={`bg-white p-8 flex flex-col gap-5 group hover:bg-surface transition-colors duration-200 ${
+                className={`bg-white p-6 sm:p-8 flex flex-col gap-5 group hover:bg-surface transition-colors duration-200 ${
                   visible ? `animate-fade-up delay-${Math.min(index + 1, 6)}` : "opacity-0"
                 }`}
               >

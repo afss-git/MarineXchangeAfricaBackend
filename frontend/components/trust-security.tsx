@@ -44,10 +44,10 @@ export function TrustSecurity() {
   }, [])
 
   return (
-    <section ref={ref} className="bg-white py-20">
+    <section ref={ref} className="bg-white py-16 sm:py-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
-        <div className={`text-center mb-16 ${isVisible ? "animate-fade-up" : "opacity-0"}`}>
+        <div className={`text-center mb-10 sm:mb-16 ${isVisible ? "animate-fade-up" : "opacity-0"}`}>
           <span className="text-ocean text-xs font-semibold tracking-[0.15em] uppercase mb-4 block">
             SECURITY
           </span>
@@ -67,7 +67,7 @@ export function TrustSecurity() {
           {features.map((feature, index) => (
             <div
               key={index}
-              className={`bg-surface rounded-2xl border border-border p-8 text-center ${
+              className={`bg-surface rounded-2xl border border-border p-6 sm:p-8 text-center ${
                 isVisible ? `animate-fade-up delay-${index + 2}` : "opacity-0"
               }`}
             >

@@ -30,7 +30,7 @@ export function CTASection() {
   return (
     <section
       ref={ref}
-      className="relative py-24 overflow-hidden"
+      className="relative py-16 sm:py-24 overflow-hidden"
       style={{ background: "linear-gradient(165deg, #0F2A44 0%, #091B2E 100%)" }}
     >
       {/* Grid pattern */}
@@ -84,21 +84,21 @@ export function CTASection() {
               </ul>
             </div>
 
-            <div className={`flex flex-wrap gap-3 ${visible ? "animate-fade-up delay-2" : "opacity-0"}`}>
-              <Link href="/signup/buyer">
+            <div className={`flex flex-col sm:flex-row gap-3 ${visible ? "animate-fade-up delay-2" : "opacity-0"}`}>
+              <Link href="/signup/buyer" className="w-full sm:w-auto">
                 <Button
                   size="lg"
-                  className="bg-ocean hover:bg-ocean-dark text-white px-7 font-semibold transition-all hover:-translate-y-0.5 gap-2"
+                  className="w-full sm:w-auto bg-ocean hover:bg-ocean-dark text-white px-7 font-semibold transition-all hover:-translate-y-0.5 gap-2"
                 >
                   Create Buyer Account
                   <ArrowRight className="w-4 h-4" />
                 </Button>
               </Link>
-              <Link href="/signup/seller">
+              <Link href="/signup/seller" className="w-full sm:w-auto">
                 <Button
                   size="lg"
                   variant="outline"
-                  className="border-white/25 text-white bg-transparent hover:bg-white/8 px-7 font-semibold transition-all hover:-translate-y-0.5"
+                  className="w-full sm:w-auto border-white/25 text-white bg-transparent hover:bg-white/8 px-7 font-semibold transition-all hover:-translate-y-0.5"
                 >
                   Register as Seller
                 </Button>
