@@ -12,8 +12,8 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
-  title: 'Harbours360 | B2B Maritime & Industrial Asset Marketplace',
-  description: 'Africa\'s premier B2B digital marketplace for high-value maritime and industrial assets. Buy and sell vessels, offshore equipment, and industrial machinery with confidence.',
+  title: 'Harbours360 — Africa\'s Maritime & Industrial Asset Marketplace',
+  description: 'Africa\'s premier B2B marketplace for high-value maritime and industrial assets. Buy and sell verified vessels, offshore equipment, and industrial machinery with confidence.',
   generator: 'Harbours360',
   keywords: ['maritime', 'industrial assets', 'B2B marketplace', 'Africa', 'vessels', 'offshore equipment'],
   icons: {

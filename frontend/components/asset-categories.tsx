@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { Ship, Sailboat, Package, Settings, Wrench, Anchor, ChevronRight, Loader2 } from "lucide-react"
+import { Ship, Sailboat, Package, Settings, Wrench, Anchor, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { marketplace, type CategoryResponse } from "@/lib/api"
 
@@ -104,8 +104,8 @@ export function AssetCategories() {
           {displayItems.map((category, index) => {
             const Icon = getCategoryIcon(category.name)
             const href = category.id
-              ? `/login?hint=Browse ${encodeURIComponent(category.name)}`
-              : "/login"
+              ? `/listings?category_id=${category.id}`
+              : "/listings"
             return (
               <Link
                 key={category.id || index}

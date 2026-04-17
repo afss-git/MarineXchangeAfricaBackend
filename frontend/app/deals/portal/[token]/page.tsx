@@ -283,7 +283,7 @@ export default function DealPortalPage() {
         <div className="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <span className="font-bold text-lg text-ocean">Harbours360</span>
+            <span className="font-bold text-lg"><span className="text-navy">Harbours</span><span className="text-ocean">360</span></span>
             <span className="text-text-secondary text-sm hidden sm:block">/ Deal Portal</span>
           </div>
           <Badge
@@ -409,7 +409,7 @@ export default function DealPortalPage() {
         </div>
 
         <p className="text-center text-xs text-text-secondary pb-4">
-          Harbours360 &middot; Secure Deal Portal &middot; All transactions are monitored and recorded.
+          Harbours<span className="text-ocean/70">360</span> &middot; Secure Deal Portal &middot; All transactions are monitored and recorded.
         </p>
       </main>
     </div>

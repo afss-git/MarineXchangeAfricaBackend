@@ -1,31 +1,32 @@
 import Link from "next/link"
-import { Anchor, ArrowRight } from "lucide-react"
+import { Anchor } from "lucide-react"
 
 const platformLinks = [
-  { label: "Browse Catalog", href: "/#catalog" },
+  { label: "Browse Listings", href: "/listings" },
   { label: "How It Works", href: "/#how-it-works" },
-  { label: "Auctions", href: "/login" },
+  { label: "Our Services", href: "/#services" },
+  { label: "Auctions", href: "/listings?availability_type=auction" },
   { label: "Get Started", href: "/signup/buyer" },
 ]
 
 const companyLinks = [
-  { label: "About", href: "#" },
-  { label: "Careers", href: "#" },
-  { label: "Press", href: "#" },
-  { label: "Contact", href: "#" },
+  { label: "About Harbours360", href: "/#about" },
+  { label: "Contact Us", href: "/#enquiry" },
+  { label: "FAQ", href: "/#faq" },
+  { label: "Careers", href: "mailto:cobwebb784@gmail.com?subject=Careers Enquiry — Harbours360" },
 ]
 
 const legalLinks = [
-  { label: "Terms of Service", href: "#" },
-  { label: "Privacy Policy", href: "#" },
-  { label: "Cookie Policy", href: "#" },
-  { label: "Compliance", href: "#" },
+  { label: "Terms of Service", href: "#terms" },
+  { label: "Privacy Policy", href: "#privacy" },
+  { label: "Cookie Policy", href: "#cookies" },
+  { label: "Compliance", href: "#compliance" },
 ]
 
 const socialLinks = [
-  { label: "Twitter", href: "#" },
-  { label: "LinkedIn", href: "#" },
-  { label: "Email", href: "#" },
+  { label: "LinkedIn", href: "https://linkedin.com" },
+  { label: "X / Twitter", href: "https://x.com" },
+  { label: "Email", href: "mailto:cobwebb784@gmail.com" },
 ]
 
 export function Footer() {
@@ -33,24 +34,43 @@ export function Footer() {
     <footer className="bg-navy-dark">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-10 lg:gap-8">
-          {/* Logo Column */}
+
+          {/* Brand column */}
           <div className="col-span-2 lg:col-span-1">
             <Link href="/" className="flex items-center gap-2 mb-4">
-              <div className="relative w-8 h-8 flex items-center justify-center">
-                <Anchor className="w-5 h-5 text-white" />
-                <ArrowRight className="w-3 h-3 text-ocean absolute -right-0.5 -top-0.5" />
+              <div
+                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                style={{ background: "rgba(14,165,233,0.15)" }}
+              >
+                <Anchor className="w-4 h-4 text-ocean" />
               </div>
-              <div className="flex flex-col">
-                <div className="flex items-baseline tracking-tight">
-                  <span className="text-white font-extrabold text-lg">Harbours</span>
-                  <span className="text-ocean font-extrabold text-lg">360</span>
-                </div>
-              </div>
+              <span className="font-extrabold text-lg tracking-tight leading-none">
+                <span className="text-white">Harbours</span>
+                <span className="text-ocean">360</span>
+              </span>
             </Link>
-            <p className="text-white/40 text-sm leading-relaxed max-w-[240px]">
-              {"Africa's trusted B2B marketplace for maritime and industrial asset transactions."}
+
+            <p className="text-white/40 text-sm leading-relaxed max-w-60 mb-6">
+              Africa&apos;s trusted B2B marketplace for maritime and industrial asset transactions.
             </p>
-            <div className="mt-6 flex gap-3">
+
+            {/* Social links */}
+            <div className="flex items-center gap-2">
+              {socialLinks.map(({ label, href }) => (
+                <a
+                  key={label}
+                  href={href}
+                  aria-label={label}
+                  target={href.startsWith("http") ? "_blank" : undefined}
+                  rel={href.startsWith("http") ? "noopener noreferrer" : undefined}
+                  className="px-2.5 py-1 rounded-lg text-xs font-medium text-white/35 hover:text-ocean hover:bg-white/6 transition-colors"
+                >
+                  {label}
+                </a>
+              ))}
+            </div>
+
+            <div className="mt-6 flex gap-2">
               <Link
                 href="/login"
                 className="text-xs font-semibold text-ocean border border-ocean/30 hover:border-ocean px-3 py-1.5 rounded-lg transition-colors"
@@ -61,23 +81,20 @@ export function Footer() {
                 href="/signup/buyer"
                 className="text-xs font-semibold text-white bg-ocean hover:bg-ocean-dark px-3 py-1.5 rounded-lg transition-colors"
               >
-                Register
+                Register Free
               </Link>
             </div>
           </div>
 
-          {/* Platform Column */}
+          {/* Platform links */}
           <div>
             <h4 className="text-white/35 text-xs font-semibold uppercase tracking-[0.15em] mb-4">
               Platform
             </h4>
             <ul className="space-y-3">
-              {platformLinks.map((link, index) => (
-                <li key={index}>
-                  <Link
-                    href={link.href}
-                    className="text-white/55 text-sm hover:text-white transition-colors"
-                  >
+              {platformLinks.map(link => (
+                <li key={link.label}>
+                  <Link href={link.href} className="text-white/55 text-sm hover:text-white transition-colors">
                     {link.label}
                   </Link>
                 </li>
@@ -85,18 +102,15 @@ export function Footer() {
             </ul>
           </div>
 
-          {/* Company Column */}
+          {/* Company links */}
           <div>
             <h4 className="text-white/35 text-xs font-semibold uppercase tracking-[0.15em] mb-4">
               Company
             </h4>
             <ul className="space-y-3">
-              {companyLinks.map((link, index) => (
-                <li key={index}>
-                  <a
-                    href={link.href}
-                    className="text-white/55 text-sm hover:text-white transition-colors"
-                  >
+              {companyLinks.map(link => (
+                <li key={link.label}>
+                  <a href={link.href} className="text-white/55 text-sm hover:text-white transition-colors">
                     {link.label}
                   </a>
                 </li>
@@ -104,46 +118,38 @@ export function Footer() {
             </ul>
           </div>
 
-          {/* Legal Column */}
+          {/* Legal links */}
           <div>
             <h4 className="text-white/35 text-xs font-semibold uppercase tracking-[0.15em] mb-4">
               Legal
             </h4>
             <ul className="space-y-3">
-              {legalLinks.map((link, index) => (
-                <li key={index}>
-                  <a
-                    href={link.href}
-                    className="text-white/55 text-sm hover:text-white transition-colors"
-                  >
+              {legalLinks.map(link => (
+                <li key={link.label}>
+                  <a href={link.href} className="text-white/55 text-sm hover:text-white transition-colors">
                     {link.label}
                   </a>
                 </li>
               ))}
             </ul>
+            <div className="mt-6 pt-6 border-t border-white/8">
+              <p className="text-white/25 text-xs leading-relaxed">
+                Harbours<span className="text-ocean/60">360</span> operates as a digital marketplace. All transactions are subject to applicable laws and regulations.
+              </p>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Bottom Bar */}
+      {/* Bottom bar */}
       <div className="border-t border-white/8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <p className="text-white/30 text-sm">
-              © 2025 Harbours360. All rights reserved.
-            </p>
-            <div className="flex items-center gap-6">
-              {socialLinks.map((link, index) => (
-                <a
-                  key={index}
-                  href={link.href}
-                  className="text-white/35 text-sm hover:text-ocean transition-colors"
-                >
-                  {link.label}
-                </a>
-              ))}
-            </div>
-          </div>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <p className="text-white/25 text-xs">
+            © {new Date().getFullYear()} Harbours<span className="text-ocean/50">360</span>. All rights reserved.
+          </p>
+          <p className="text-white/20 text-xs">
+            Built for Africa&apos;s maritime sector.
+          </p>
         </div>
       </div>
     </footer>

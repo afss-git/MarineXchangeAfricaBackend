@@ -284,7 +284,7 @@ function CatalogContent() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2 font-extrabold text-navy text-base">
             <Anchor className="w-5 h-5 text-ocean" />
-            Harbours360
+            <span>Harbours<span className="text-ocean">360</span></span>
           </Link>
           <div className="flex items-center gap-2">
             <Link href="/login">

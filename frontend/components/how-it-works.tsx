@@ -58,7 +58,7 @@ export function HowItWorks() {
             className="text-navy font-extrabold mb-4"
             style={{ fontSize: 'clamp(28px, 4vw, 40px)', letterSpacing: '-0.03em' }}
           >
-            <span className="text-balance">How Harbours360 Works</span>
+            <span className="text-balance">How Harbours<span className="text-ocean">360</span> Works</span>
           </h2>
           <p className="text-text-secondary text-base max-w-xl mx-auto">
             A streamlined process to buy or sell high-value maritime and industrial assets.

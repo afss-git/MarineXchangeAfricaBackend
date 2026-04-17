@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { Anchor, ArrowRight, Menu, X } from "lucide-react"
+import { Anchor, Menu, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 export function Navbar() {
@@ -10,110 +10,118 @@ export function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
   useEffect(() => {
-    const handleScroll = () => {
-      setIsScrolled(window.scrollY > 10)
-    }
+    const handleScroll = () => setIsScrolled(window.scrollY > 10)
     window.addEventListener("scroll", handleScroll)
     return () => window.removeEventListener("scroll", handleScroll)
   }, [])
+
+  const linkClass = isScrolled
+    ? "text-text-secondary hover:text-navy"
+    : "text-white/75 hover:text-white"
 
   return (
     <nav
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
         isScrolled
-          ? "bg-white/95 backdrop-blur-md border-b border-border shadow-sm"
+          ? "bg-white/96 backdrop-blur-md border-b border-border shadow-sm"
           : "bg-transparent"
       }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
+
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2">
-            <div className="relative w-8 h-8 flex items-center justify-center">
-              <Anchor className={`w-5 h-5 transition-colors duration-300 ${isScrolled ? "text-navy" : "text-white"}`} />
-              <ArrowRight className="w-3 h-3 text-ocean absolute -right-0.5 -top-0.5" />
+          <Link href="/" className="flex items-center gap-2 shrink-0">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center"
+              style={{ background: isScrolled ? "rgba(14,165,233,0.1)" : "rgba(14,165,233,0.15)" }}
+            >
+              <Anchor className={`w-4.5 h-4.5 transition-colors duration-300 ${isScrolled ? "text-ocean" : "text-ocean"}`} />
             </div>
-            <div className="flex flex-col">
-              <div className="flex items-baseline tracking-tight">
-                <span className={`font-extrabold text-lg transition-colors duration-300 ${isScrolled ? "text-navy" : "text-white"}`}>Harbours</span>
-                <span className="text-ocean font-extrabold text-lg">360</span>
-              </div>
-            </div>
+            <span className="font-extrabold text-lg tracking-tight leading-none">
+              <span className={`transition-colors duration-300 ${isScrolled ? "text-navy" : "text-white"}`}>Harbours</span>
+              <span className="text-ocean">360</span>
+            </span>
           </Link>
 
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center gap-4">
-            <a
-              href="#catalog"
-              className={`transition-colors duration-300 text-sm font-medium ${isScrolled ? "text-text-secondary hover:text-navy" : "text-white/80 hover:text-white"}`}
-            >
-              Browse Catalog
-            </a>
-            <a
-              href="#how-it-works"
-              className={`transition-colors duration-300 text-sm font-medium ${isScrolled ? "text-text-secondary hover:text-navy" : "text-white/80 hover:text-white"}`}
-            >
+          {/* Desktop nav */}
+          <div className="hidden md:flex items-center gap-1">
+            <Link href="/listings" className={`transition-colors duration-300 text-sm font-medium px-3 py-2 rounded-lg hover:bg-black/5 ${linkClass}`}>
+              Listings
+            </Link>
+            <a href="#how-it-works" className={`transition-colors duration-300 text-sm font-medium px-3 py-2 rounded-lg hover:bg-black/5 ${linkClass}`}>
               How It Works
             </a>
+            <a href="#services" className={`transition-colors duration-300 text-sm font-medium px-3 py-2 rounded-lg hover:bg-black/5 ${linkClass}`}>
+              Services
+            </a>
+            <a href="#faq" className={`transition-colors duration-300 text-sm font-medium px-3 py-2 rounded-lg hover:bg-black/5 ${linkClass}`}>
+              FAQ
+            </a>
+            <a href="#enquiry" className={`transition-colors duration-300 text-sm font-medium px-3 py-2 rounded-lg hover:bg-black/5 ${linkClass}`}>
+              Contact
+            </a>
+          </div>
+
+          {/* Desktop auth */}
+          <div className="hidden md:flex items-center gap-2">
             <Link href="/login">
               <Button
                 variant="outline"
-                className={`transition-all duration-300 hover:-translate-y-0.5 ${
+                size="sm"
+                className={`transition-all duration-300 text-sm ${
                   isScrolled
                     ? "border-border text-text-primary hover:bg-surface"
-                    : "border-white/30 text-white bg-transparent hover:bg-white/10"
+                    : "border-white/25 text-white bg-transparent hover:bg-white/10"
                 }`}
               >
                 Log In
               </Button>
             </Link>
             <Link href="/signup/buyer">
-              <Button className="bg-ocean hover:bg-ocean-dark text-white transition-all hover:-translate-y-0.5">
+              <Button size="sm" className="bg-ocean hover:bg-ocean-dark text-white text-sm transition-all hover:-translate-y-px">
                 Get Started
               </Button>
             </Link>
           </div>
 
-          {/* Mobile Menu Button */}
+          {/* Mobile toggle */}
           <button
-            className={`md:hidden p-2 transition-colors duration-300 ${isScrolled ? "text-navy" : "text-white"}`}
+            className={`md:hidden p-2 rounded-lg transition-colors ${isScrolled ? "text-navy hover:bg-surface" : "text-white hover:bg-white/10"}`}
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             aria-label="Toggle menu"
           >
-            {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
         </div>
 
-        {/* Mobile Menu */}
+        {/* Mobile menu */}
         {isMobileMenuOpen && (
-          <div className={`md:hidden py-4 border-t ${isScrolled ? "border-border" : "border-white/20"}`}>
-            <div className="flex flex-col gap-4">
-              <a
-                href="#catalog"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className={`transition-colors text-sm font-medium px-2 ${isScrolled ? "text-text-secondary hover:text-navy" : "text-white/80 hover:text-white"}`}
-              >
-                Browse Catalog
-              </a>
-              <a
-                href="#how-it-works"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className={`transition-colors text-sm font-medium px-2 ${isScrolled ? "text-text-secondary hover:text-navy" : "text-white/80 hover:text-white"}`}
-              >
-                How It Works
-              </a>
+          <div className={`md:hidden py-4 border-t space-y-1 ${isScrolled ? "border-border" : "border-white/15"}`}>
+            {[
+              { label: "Listings", href: "/listings", isLink: true },
+              { label: "How It Works", href: "#how-it-works", isLink: false },
+              { label: "Services", href: "#services", isLink: false },
+              { label: "FAQ", href: "#faq", isLink: false },
+              { label: "Contact", href: "#enquiry", isLink: false },
+            ].map(item => (
+              item.isLink
+                ? <Link key={item.label} href={item.href} onClick={() => setIsMobileMenuOpen(false)}
+                    className={`block px-3 py-2 rounded-lg text-sm font-medium transition-colors ${linkClass}`}>
+                    {item.label}
+                  </Link>
+                : <a key={item.label} href={item.href} onClick={() => setIsMobileMenuOpen(false)}
+                    className={`block px-3 py-2 rounded-lg text-sm font-medium transition-colors ${linkClass}`}>
+                    {item.label}
+                  </a>
+            ))}
+            <div className="pt-3 flex flex-col gap-2">
               <Link href="/login" onClick={() => setIsMobileMenuOpen(false)}>
-                <Button
-                  variant="outline"
-                  className={`w-full ${isScrolled ? "border-border text-text-primary hover:bg-surface" : "border-white/30 text-white bg-transparent hover:bg-white/10"}`}
-                >
+                <Button variant="outline" className={`w-full ${isScrolled ? "border-border text-text-primary" : "border-white/25 text-white bg-transparent"}`}>
                   Log In
                 </Button>
               </Link>
               <Link href="/signup/buyer" onClick={() => setIsMobileMenuOpen(false)}>
-                <Button className="bg-ocean hover:bg-ocean-dark text-white w-full">
-                  Get Started
-                </Button>
+                <Button className="bg-ocean hover:bg-ocean-dark text-white w-full">Get Started</Button>
               </Link>
             </div>
           </div>
