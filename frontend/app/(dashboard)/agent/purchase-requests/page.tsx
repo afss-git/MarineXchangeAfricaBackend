@@ -130,7 +130,7 @@ function DocRequestsPanel({ requestId }: { requestId: string }) {
 
   async function handleViewDoc(req: PRDocRequest) {
     try {
-      const token = localStorage.getItem("access_token")
+      const token = localStorage.getItem("mx_access_token")
       const res = await fetch(prAgent.docDownloadUrl(req.id), {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       })

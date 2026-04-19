@@ -168,7 +168,7 @@ function AdminDocRequestsSection({ requestId }: { requestId: string }) {
 
   async function handleView(doc: PRDocRequest) {
     try {
-      const token = localStorage.getItem("access_token")
+      const token = localStorage.getItem("mx_access_token")
       const res = await fetch(prAdmin.docDownloadUrl(doc.id), {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       })

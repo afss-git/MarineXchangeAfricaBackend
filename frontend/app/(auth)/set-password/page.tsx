@@ -30,7 +30,7 @@ export default function SetPasswordPage() {
     const token = params.get("access_token")
     const type = params.get("type")
     if (token && (type === "invite" || type === "recovery")) {
-      localStorage.setItem("access_token", token)
+      localStorage.setItem("mx_access_token", token)
       setAccessToken(token)
     } else {
       setTokenError(true)
@@ -51,13 +51,9 @@ export default function SetPasswordPage() {
     setErrors({})
     setIsLoading(true)
     try {
-      const token = localStorage.getItem("access_token")
-      console.log("[SetPassword] Token present:", !!token, "length:", token?.length)
-      console.log("[SetPassword] Calling POST /auth/me/set-password...")
       await profileApi.setPassword({ new_password: password })
-      console.log("[SetPassword] SUCCESS")
-      localStorage.removeItem("access_token")
-      localStorage.removeItem("refresh_token")
+      localStorage.removeItem("mx_access_token")
+      localStorage.removeItem("mx_refresh_token")
       setDone(true)
     } catch (err: unknown) {
       console.error("[SetPassword] Full error:", err)
