@@ -1986,7 +1986,7 @@ export const documents = {
     request<InvoiceOut[]>(`/documents/deals/${dealId}/invoices`),
 
   downloadInvoice: (invoiceId: string) =>
-    request<InvoiceDownloadResponse>(`/documents/invoices/${invoiceId}/download`),
+    fetchBlob(`/documents/invoices/${invoiceId}/download`),
 
   // Admin
   admin: {

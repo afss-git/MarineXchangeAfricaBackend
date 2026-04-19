@@ -875,23 +875,23 @@ async def list_invoices(
     return [_row_to_invoice(r) for r in rows]
 
 
-async def get_invoice_download_url(
+async def get_invoice_pdf_bytes(
     db: asyncpg.Connection,
     invoice_id: UUID,
     user: dict,
     request_ip: str = "unknown",
-) -> InvoiceDownloadResponse:
+) -> tuple[bytes, str]:
+    """Download invoice PDF bytes from Supabase and return them directly."""
     inv = await db.fetchrow(
         "SELECT * FROM finance.deal_invoices WHERE id = $1", invoice_id
     )
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found.")
 
-    deal = await _assert_deal_party(db, inv["deal_id"], user)
+    await _assert_deal_party(db, inv["deal_id"], user)
     roles = user.get("roles", [])
     is_admin = "admin" in roles or "finance_admin" in roles
 
-    # Non-admins can only download issued invoices
     if not is_admin and inv["status"] != "issued":
         raise HTTPException(status_code=403, detail="Invoice is not yet available for download.")
 
@@ -900,16 +900,10 @@ async def get_invoice_download_url(
 
     try:
         supabase = await get_supabase_admin_client()
-        result = await supabase.storage.from_(INVOICES_BUCKET).create_signed_url(
-            inv["pdf_path"], SIGNED_URL_TTL,
-            options={"download": f"{inv['invoice_ref']}.pdf"},
-        )
-        signed_url = result.get("signedURL") or result.get("signed_url") or result.get("signedUrl", "")
-        if not signed_url:
-            raise ValueError("No signed URL returned.")
+        pdf_bytes = await supabase.storage.from_(INVOICES_BUCKET).download(inv["pdf_path"])
     except Exception as exc:
-        logger.error("Invoice signed URL failed: %s", exc)
-        raise HTTPException(status_code=500, detail="Could not generate download link.")
+        logger.error("Invoice PDF download from storage failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not retrieve invoice PDF.")
 
     await write_audit_log(
         db,
@@ -921,9 +915,4 @@ async def get_invoice_download_url(
         metadata={"ip": request_ip, "invoice_ref": inv["invoice_ref"]},
     )
 
-    return InvoiceDownloadResponse(
-        invoice_id=UUID(str(inv["id"])),
-        invoice_ref=inv["invoice_ref"],
-        signed_url=signed_url,
-        expires_in_seconds=SIGNED_URL_TTL,
-    )
+    return pdf_bytes, inv["invoice_ref"]

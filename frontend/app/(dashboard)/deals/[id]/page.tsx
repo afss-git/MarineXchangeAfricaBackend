@@ -563,14 +563,15 @@ function InvoicesPanel({ invoices }: { invoices: InvoiceOut[] }) {
     if (!inv.has_pdf) { alert("No PDF available for this invoice yet."); return }
     setDownloading(inv.id)
     try {
-      const res = await documentsApi.downloadInvoice(inv.id)
+      const { blob } = await documentsApi.downloadInvoice(inv.id)
+      const blobUrl = URL.createObjectURL(blob)
       const a = document.createElement("a")
-      a.href = res.signed_url
-      a.download = `${res.invoice_ref}.pdf`
-      a.rel = "noopener"
+      a.href = blobUrl
+      a.download = `${inv.invoice_ref}.pdf`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
+      URL.revokeObjectURL(blobUrl)
     } catch (e) {
       alert((e as Error)?.message ?? "Download failed.")
     } finally {
